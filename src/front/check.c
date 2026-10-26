@@ -811,11 +811,25 @@ static int simple_scrutinee(const Value *t) {
 }
 
 /* fold takes its scrutinee last, so the scrutinee type sets the arity. */
+/* 1 when some constructor of FAM is a path constructor. */
+static int family_has_path(const Machine *m, uint32_t fam) {
+  const FamilyInfo *f = &m->families[fam];
+  uint32_t j;
+  for (j = 0; j < f->ctor_count; j++)
+    if (m->ctors[f->first_ctor + j].depth > 0u)
+      return 1;
+  return 0;
+}
+
 static const Core *rule_fold(Call *k) {
   Checker *c = k->c;
   const Value *st = NULL;
   const Core *s = try_infer(c, k->args[k->argc - 1u], &st);
   uint32_t fam = val_is(st, OP_FAMILY) ? st->inst : NO_FAMILY;
+  if (s != NULL && fam != NO_FAMILY && c->m->families[fam].index_count > 0u)
+    return nul(FAIL(c, "DOMAIN_FAMILY", "fold over %s is not in S2: a fold over an indexed family needs a dependent eliminator (S3)", c->m->families[fam].name));
+  if (s != NULL && fam != NO_FAMILY && family_has_path(c->m, fam))
+    return nul(FAIL(c, "DOMAIN_FAMILY", "fold over %s is not in S2: a fold over a higher inductive family needs a dependent eliminator (S3)", c->m->families[fam].name));
   if (s != NULL && fam != NO_FAMILY && c->m->families[fam].ctor_count + 1u == k->argc) {
     k->hint = k->outer;
     return fold_family(k, s, st);
@@ -1289,55 +1303,107 @@ static int check_params(Checker *c, const FamilyInfo *f, const Term *const *args
   return 1;
 }
 
+/* The fields of a constructor of an indexed family are a telescope: a field
+   type can use the earlier fields. A cell monad keeps fields in the context
+   of its parameters only. */
+static int telescope(const FamilyInfo *f) {
+  return f->index_count > 0u && f->r1 != FAMILY_CM;
+}
+
 static const Core *family_app(Call *k, uint32_t fam) {
   Checker *c = k->c;
   const FamilyInfo *f = &c->m->families[fam];
-  const Core **cores = arena_alloc(c->m->arena, ((size_t)f->param_count + 1u) * sizeof *cores);
-  const Value **vals = arena_alloc(c->m->arena, ((size_t)f->param_count + 1u) * sizeof *vals);
+  uint32_t p = f->param_count;
+  const Core **cores = arena_alloc(c->m->arena, ((size_t)p + f->index_count + 1u) * sizeof *cores);
+  const Value **vals = arena_alloc(c->m->arena, ((size_t)p + 1u) * sizeof *vals);
+  uint32_t j;
   if (cores == NULL || vals == NULL)
     return nul(FAIL(c, "OOM", "out of memory"));
   if (!check_params(c, f, k->args, cores, vals))
     return NULL;
+  for (j = 0; j < f->index_count; j++) {
+    cores[p + j] = check(c, k->args[p + j], eval_core(c->m, env_of(c, vals, p), f->index_types[j]));
+    if (cores[p + j] == NULL)
+      return NULL;
+  }
   k->type = val_univ(c->m, f->universe);
-  return core_op(c, OP_FAMILY, fam, 0, cores, f->param_count);
+  return core_op(c, OP_FAMILY, fam, 0, cores, p + f->index_count);
 }
 
-/* A constructor takes the family parameters (the indices), then its fields. */
+/* A constructor takes the family parameters, then its fields. Its type is
+   the family at the parameters and at its result indices. */
+/* A path constructor at its params and fields: OP_PCTOR under one OP_PLAM
+   for each dimension. Its type is the constructor path type. */
+static const Core *pctor_app(Call *k, uint32_t ctor, const Value *const *vals, uint32_t n) {
+  Checker *c = k->c;
+  const CtorInfo *ci = &c->m->ctors[ctor];
+  uint32_t d = ci->depth;
+  const Core **args = arena_alloc(c->m->arena, ((size_t)n + d + 1u) * sizeof *args);
+  const Core *body;
+  uint32_t i;
+  if (args == NULL)
+    return nul(FAIL(c, "OOM", "out of memory"));
+  for (i = 0; i < n; i++)
+    args[i] = quote_value(c->m, c->level + d, vals[i]);
+  for (i = 0; i < d; i++)
+    args[n + i] = core_index(c, CORE_VAR, d - 1u - i);
+  k->type = eval_core(c->m, env_of(c, vals, n), ci->type);
+  body = core_op(c, OP_PCTOR, ctor, 0, args, n + d);
+  for (i = 0; i < d; i++)
+    body = op3(c, OP_PLAM, 0, 1, core_bind(c, CORE_LAM, "i", NULL, body), NULL, NULL);
+  return body;
+}
+
 static const Core *ctor_app(Call *k, uint32_t ctor) {
   Checker *c = k->c;
   const CtorInfo *ci = &c->m->ctors[ctor];
   const FamilyInfo *f = &c->m->families[ci->family];
   uint32_t p = f->param_count;
   uint32_t n = p + ci->field_count;
+  int dep = telescope(f) || ci->depth > 0u;
   const Core **cores = arena_alloc(c->m->arena, ((size_t)n + 1u) * sizeof *cores);
-  const Value **vals = arena_alloc(c->m->arena, ((size_t)p + 1u) * sizeof *vals);
-  const Env *env;
+  const Value **vals = arena_alloc(c->m->arena, ((size_t)n + 1u) * sizeof *vals);
+  const Value **tvals = arena_alloc(c->m->arena, ((size_t)p + f->index_count + 1u) * sizeof *tvals);
   uint32_t j;
-  if (cores == NULL || vals == NULL)
+  if (cores == NULL || vals == NULL || tvals == NULL)
     return nul(FAIL(c, "OOM", "out of memory"));
   if (!check_params(c, f, k->args, cores, vals))
     return NULL;
-  env = env_of(c, vals, p);
   for (j = 0; j < ci->field_count; j++) {
-    cores[p + j] = check(c, k->args[p + j], eval_core(c->m, env, ci->fields[j].type));
+    cores[p + j] = check(c, k->args[p + j], eval_core(c->m, env_of(c, vals, dep ? p + j : p), ci->fields[j].type));
     if (cores[p + j] == NULL)
       return NULL;
+    vals[p + j] = dep ? here(c, cores[p + j]) : NULL;
   }
-  k->type = val_op(c->m, VAL_OP, OP_FAMILY, ci->family, 0, vals, p);
+  for (j = 0; j < p + f->index_count; j++)
+    tvals[j] = j < p ? vals[j] : eval_core(c->m, env_of(c, vals, dep ? n : p), ci->indices[j - p]);
+  if (ci->depth > 0u)
+    return pctor_app(k, ctor, vals, n);
+  k->type = val_op(c->m, VAL_OP, OP_FAMILY, ci->family, 0, tvals, p + f->index_count);
   return core_op(c, OP_CTOR, ctor, 0, cores, n);
 }
 
-/* A field of a one-constructor family is a projection. */
+/* A field of a one-constructor family is a projection. In a telescope the
+   earlier fields are the projections of the same value. */
 static const Core *proj_app(Call *k, uint32_t ctor, uint32_t field) {
   Checker *c = k->c;
   const CtorInfo *ci = &c->m->ctors[ctor];
+  const FamilyInfo *f = &c->m->families[ci->family];
+  uint32_t p = f->param_count;
+  uint32_t n = telescope(f) ? p + field : p;
+  const Value **vals = arena_alloc(c->m->arena, ((size_t)n + 1u) * sizeof *vals);
   const Value *xt = NULL;
   const Core *x = infer(c, k->args[0], &xt);
+  uint32_t e;
   if (x == NULL)
     return NULL;
   if (!val_is(xt, OP_FAMILY) || xt->inst != ci->family)
-    return nul(FAIL(c, "TYPE_MISMATCH", "%s needs a value of the family %s, found a term of type %s", ci->fields[field].name, c->m->families[ci->family].name, show(c, xt)));
-  k->type = eval_core(c->m, env_of(c, xt->args, xt->argc), ci->fields[field].type);
+    return nul(FAIL(c, "TYPE_MISMATCH", "%s needs a value of the family %s, found a term of type %s", ci->fields[field].name, f->name, show(c, xt)));
+  if (vals == NULL)
+    return nul(FAIL(c, "OOM", "out of memory"));
+  for (e = 0; e < n; e++)
+    vals[e] = e < p ? xt->args[e] : here(c, core_op(c, OP_PROJ, ctor, e - p, &x, 1));
+  k->type = eval_core(c->m, env_of(c, vals, n), ci->fields[field].type);
   return core_op(c, OP_PROJ, ctor, field, &x, 1);
 }
 
@@ -1397,9 +1463,9 @@ static const Dropped DROPPED[] = {
   {"pair", "pack", "use pack (a term of A × B is pack a b)", "S1"},
   {"first", "witness", "use witness", "S1"},
   {"second", "payload", "use payload", "S1"},
-  {"List", NULL, "use a vector Fin n → A (S2)", "S1"},
-  {"nil", NULL, "use a vector Fin n → A (S2)", "S1"},
-  {"cons", NULL, "use a vector Fin n → A (S2)", "S1"},
+  {"List", NULL, "use a vector Fin n → A (S2d)", "S1"},
+  {"nil", NULL, "use a vector Fin n → A (S2d)", "S1"},
+  {"cons", NULL, "use a vector Fin n → A (S2d)", "S1"},
   {"filter", NULL, "no core name replaces it", "S1"},
   {"unfold", NULL, "no core name replaces it before S2", "S1"},
   {"Eq", "Path", "use Path A x y", "S2"}
@@ -1445,7 +1511,7 @@ static uint32_t known_arity(const Checker *c, const Head *h) {
   case HEAD_TERM:
     return 0u;
   case HEAD_FAMILY:
-    return c->m->families[h->index].param_count;
+    return c->m->families[h->index].param_count + c->m->families[h->index].index_count;
   case HEAD_CTOR:
     return ci == NULL ? 0u : c->m->families[ci->family].param_count + ci->field_count;
   case HEAD_PROJ:
@@ -1763,12 +1829,217 @@ static int name_free(Checker *c, const char *name) {
   return why == NULL ? 1 : FAIL(c, "REFUSE_NAME", "%s is %s (rule R4)", name, why);
 }
 
-/* A recursive field must be the whole field type, in a family with no
-   parameters. */
-static int check_field(Checker *c, uint32_t fam, const Field *field, FieldInfo *out) {
+/* T ends in a universe, so a parameter of type T is a type argument. */
+static int cell_type_argument(const Core *t) {
+  while (t != NULL && t->kind == CORE_PI)
+    t = t->b;
+  return t != NULL && t->kind == CORE_UNIV;
+}
+
+static int has_type_param(const FamilyInfo *f) {
+  uint32_t k;
+  for (k = 0; k < f->param_count; k++)
+    if (cell_type_argument(f->param_types[k]))
+      return 1;
+  return 0;
+}
+
+/* The R1 class of a family. check_decl refuses program data with no type
+   argument, so a program family here has a type parameter (a cell monad)
+   or a type index (type_index refuses it). */
+static FamilyClass family_class(const Decl *d, const FamilyInfo *f) {
+  if (d->origin == ORIGIN_DOMAIN)
+    return FAMILY_BASE;
+  return has_type_param(f) ? FAMILY_CM : FAMILY_INDEXED;
+}
+
+/* A field type is in the context of the family parameters only, so the
+   parameter K is the variable with the index param_count - 1 - K. */
+
+/* The type parameter K that T names, else param_count. */
+static uint32_t cell_param(const FamilyInfo *f, const Core *t) {
+  uint32_t p = f->param_count;
+  uint32_t k;
+  if (t == NULL || t->kind != CORE_VAR || t->index >= p)
+    return p;
+  k = p - 1u - t->index;
+  return f->param_types[k]->kind == CORE_UNIV ? k : p;
+}
+
+/* T is the family FAM at its own parameters, in order, under EARLIER
+   fields, then at any indices. */
+static int own_family(const Checker *c, uint32_t fam, const Core *t, uint32_t earlier) {
+  uint32_t p = c->m->families[fam].param_count;
+  uint32_t i;
+  if (t == NULL || t->kind != CORE_OP || t->op != OP_FAMILY || t->inst != fam || t->argc != p + c->m->families[fam].index_count)
+    return 0;
+  for (i = 0; i < p; i++)
+    if (t->args[i] == NULL || t->args[i]->kind != CORE_VAR || t->args[i]->index != earlier + p - 1u - i)
+      return 0;
+  return 1;
+}
+
+/* T has no free variable at DEPTH binders, so it names no parameter. */
+static int cell_closed(const Core *t, uint32_t depth) {
+  uint32_t i;
+  if (t == NULL)
+    return 1;
+  switch (t->kind) {
+  case CORE_VAR:
+    return t->index < depth;
+  case CORE_GLOBAL:
+  case CORE_NAT:
+  case CORE_TRAP:
+  case CORE_UNIV:
+    return 1;
+  case CORE_LAM:
+  case CORE_PI:
+  case CORE_SIGMA:
+    return cell_closed(t->a, depth) && cell_closed(t->b, depth + 1u);
+  case CORE_APP:
+    return cell_closed(t->a, depth) && cell_closed(t->b, depth);
+  case CORE_OP:
+    break;
+  }
+  for (i = 0; i < t->argc; i++)
+    if (!cell_closed(t->args[i], depth))
+      return 0;
+  return 1;
+}
+
+/* A family with a type argument has only universe parameters (rule R1). */
+static int cell_header(Checker *c, const Decl *d, const FamilyInfo *f) {
+  uint32_t k;
+  for (k = 0; k < f->param_count; k++)
+    if (f->param_types[k]->kind != CORE_UNIV)
+      return FAIL(c, "REFUSE_CELL", "%s has a type argument and the parameter %s is not a universe; a cell signature has only type parameters (rule R1)", f->name, d->params[k].name);
+  return 1;
+}
+
+/* An index type that ends in a universe is a type index. A cell signature
+   binds its type arguments as uniform parameters (rule R1). */
+static int type_index(Checker *c, const FamilyInfo *f) {
+  uint32_t k;
+  for (k = 0; k < f->index_count; k++) {
+    const Value *type = here(c, f->index_types[k]);
+    const Core *normal = type == NULL ? NULL : quote_value(c->m, c->level, type);
+    if (normal == NULL)
+      return 0;
+    if (cell_type_argument(normal))
+      return FAIL(c, "REFUSE_CELL", "%s has a type index; a cell signature binds its type arguments as uniform parameters (rule R1)", f->name);
+  }
+  return 1;
+}
+
+/* The body of the line of a path type, under one binder; NULL when T is
+   not a path type. */
+static const Core *path_body(const Core *t) {
+  return t != NULL && t->kind == CORE_OP && t->op == OP_PATHP && t->argc == 3u && t->args[0] != NULL && t->args[0]->kind == CORE_LAM ? t->args[0]->b : NULL;
+}
+
+/* A field of a cell monad: a type parameter (the one field of its
+   constructor), closed data, the family at its own parameters, or a path
+   in the family (under EARLIER fields). */
+static int cell_field(Checker *c, uint32_t fam, const FieldInfo *out, size_t field_count, uint32_t earlier) {
+  const FamilyInfo *f = &c->m->families[fam];
+  const Core *t = out->type;
+  const Core *line = path_body(t);
+  if (t != NULL && t->kind == CORE_VAR && t->index >= earlier && t->index - earlier < f->param_count)
+    return field_count == 1u ? 1 : FAIL(c, "REFUSE_CELL", "%s is not a cell signature: the field %s has a type parameter as its type, so it must be the one field of its constructor (rule R1)", f->name, out->name);
+  if (own_family(c, fam, t, earlier) || (line != NULL && own_family(c, fam, line, earlier + 1u)) || (c->self_uses == 0u && cell_closed(t, earlier)))
+    return 1;
+  return FAIL(c, "REFUSE_CELL", "%s is not a cell signature: the field %s must be a type parameter, closed data, %s at its own parameters or a path in %s (rule R1)", f->name, out->name, f->name, f->name);
+}
+
+/* Each type parameter has one generator: one constructor with one field
+   of that type (rule R1). */
+static int cell_generators(Checker *c, const Decl *d, uint32_t fam) {
+  const Machine *m = c->m;
+  const FamilyInfo *f = &m->families[fam];
+  uint32_t k;
+  for (k = 0; k < f->param_count; k++) {
+    unsigned count = 0;
+    uint32_t j;
+    for (j = 0; j < f->ctor_count; j++) {
+      const CtorInfo *ci = &m->ctors[f->first_ctor + j];
+      count += ci->depth == 0u && ci->field_count == 1u && cell_param(f, ci->fields[0].type) == k;
+    }
+    if (count == 0u)
+      return FAIL(c, "REFUSE_CELL", "%s is not a cell signature: the type parameter %s occurs in no constructor (rule R1)", f->name, d->params[k].name);
+    if (count > 1u)
+      return FAIL(c, "REFUSE_CELL", "%s is not a cell signature: the type parameter %s has %u generators (rule R1)", f->name, d->params[k].name, count);
+  }
+  return 1;
+}
+
+/* A point term over the N fields (under DEPTH interval binders): a
+   recursive field, or a point constructor of FAM at the params with point
+   terms as its recursive arguments and fields as its other arguments. */
+static int point_term(const Checker *c, uint32_t fam, const FieldInfo *fields, uint32_t n, const Core *k, uint32_t depth) {
+  const Machine *m = c->m;
+  uint32_t p = m->families[fam].param_count;
+  const CtorInfo *ci;
+  uint32_t i;
+  if (k != NULL && k->kind == CORE_VAR)
+    return k->index >= depth && k->index - depth < n && fields[n - 1u - (k->index - depth)].recursive;
+  if (k == NULL || k->kind != CORE_OP || k->op != OP_CTOR || k->inst >= m->ctor_count)
+    return 0;
+  ci = &m->ctors[k->inst];
+  if (ci->family != fam || ci->depth != 0u || k->argc != p + ci->field_count)
+    return 0;
+  for (i = 0; i < p; i++)
+    if (k->args[i] == NULL || k->args[i]->kind != CORE_VAR || k->args[i]->index != depth + n + p - 1u - i)
+      return 0;
+  for (i = 0; i < ci->field_count; i++) {
+    const Core *x = k->args[p + i];
+    int ok = ci->fields[i].recursive ? point_term(c, fam, fields, n, x, depth)
+                                     : x != NULL && x->kind == CORE_VAR && x->index >= depth && x->index - depth < n;
+    if (!ok)
+      return 0;
+  }
+  return 1;
+}
+
+/* A path constructor: its type is Path T s t, where T is the family at its
+   params and s, t are point terms. S2 has dimension 1 only (Q-S2b-5 (a)):
+   a square gets REFUSE_CELL. The fields are pushed. */
+static int check_pctor(Checker *c, uint32_t fam, const Ctor *ctor, const FieldInfo *fields, CtorInfo *ci) {
+  Machine *m = c->m;
+  const char *name = m->families[fam].name;
+  uint32_t n = (uint32_t)ctor->field_count;
+  uint64_t level = 0;
+  const Core *t = check_type(c, ctor->result, &level);
+  const Core *k = t;
+  const Core **ends = arena_alloc(m->arena, 2u * sizeof *ends);
+  uint32_t depth = 0;
+  if (t == NULL)
+    return 0;
+  if (ends == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  while (k != NULL && !own_family(c, fam, k, n + depth)) {
+    k = path_body(k);
+    depth++;
+  }
+  if (k == NULL || depth == 0u)
+    return FAIL(c, "REFUSE_CELL", "%s is not a cell signature: the path constructor %s must have the type Path T s t, where T is %s at its own parameters (rule R1)", name, ctor->name, name);
+  if (depth > 1u)
+    return FAIL(c, "REFUSE_CELL", "%s is not a cell signature: the path constructor %s has dimension %u; S2 has dimension 1 only (rule R1)", name, ctor->name, (unsigned)depth);
+  ends[0] = t->args[1];
+  ends[1] = t->args[2];
+  if (!(point_term(c, fam, fields, n, ends[0], 0u) && point_term(c, fam, fields, n, ends[1], 0u)))
+    return FAIL(c, "REFUSE_CELL", "%s is not a cell signature: an end of the path constructor %s must be a point term (rule R1)", name, ctor->name);
+  ci->depth = depth;
+  ci->type = t;
+  ci->ends = ends;
+  return 1;
+}
+
+/* A recursive field must be the whole field type: the family at its own
+   parameters (under EARLIER fields), then at any indices. A field of a cell
+   monad must pass cell_field first. */
+static int check_field(Checker *c, uint32_t fam, const Field *field, size_t field_count, uint32_t earlier, FieldInfo *out) {
   uint64_t level = 0;
   const Core *t;
-  int whole;
   if (!name_free(c, field->name))
     return 0;
   c->self_uses = 0;
@@ -1777,24 +2048,37 @@ static int check_field(Checker *c, uint32_t fam, const Field *field, FieldInfo *
     return 0;
   if (level > c->m->families[fam].universe)
     c->m->families[fam].universe = level;
-  whole = t->kind == CORE_OP && t->op == OP_FAMILY && t->inst == fam && c->m->families[fam].param_count == 0u;
   out->name = field->name;
   out->type = t;
   out->recursive = c->self_uses > 0u;
-  if (out->recursive && !whole)
-    return FAIL(c, "DOMAIN_FAMILY", "the recursive field %s must have the type %s itself, in a family with no parameters", field->name, c->m->families[fam].name);
+  if (c->m->families[fam].r1 == FAMILY_CM && !cell_field(c, fam, out, field_count, earlier))
+    return 0;
+  if (c->m->families[fam].r1 == FAMILY_CM && own_family(c, fam, path_body(t), earlier + 1u))
+    out->recursive = 0;
+  if (out->recursive && !own_family(c, fam, t, earlier))
+    return FAIL(c, "DOMAIN_FAMILY", "the recursive field %s must have the type %s itself, at the parameters of the family", field->name, c->m->families[fam].name);
   return 1;
 }
 
+/* In a telescope each field is in scope in the later fields and in the
+   result indices. */
 static int check_ctor(Checker *c, uint32_t fam, const Ctor *ctor) {
   Machine *m = c->m;
+  const FamilyInfo *f = &m->families[fam];
+  int dep = telescope(f) || ctor->result != NULL;
   FieldInfo *fields = arena_alloc(m->arena, (ctor->field_count + 1u) * sizeof *fields);
+  const Core **indices = arena_alloc(m->arena, (f->index_count + 1u) * sizeof *indices);
+  const Value **itypes = arena_alloc(m->arena, (f->index_count + 1u) * sizeof *itypes);
   CtorInfo *ci = &m->ctors[m->ctor_count];
   size_t j;
-  if (fields == NULL)
+  if (fields == NULL || indices == NULL || itypes == NULL)
     return FAIL(c, "OOM", "out of memory");
   if (!name_free(c, ctor->name))
     return 0;
+  if (ctor->result != NULL && f->r1 != FAMILY_CM)
+    return FAIL(c, "DOMAIN_FAMILY", "the path constructor %s is in S2 only in a cell signature (rule R1)", ctor->name);
+  for (j = 0; j < f->index_count; j++)
+    itypes[j] = here(c, f->index_types[j]);
   for (j = 0; j < ctor->field_count; j++) {
     size_t earlier;
     const char *name = ctor->fields[j].name;
@@ -1803,44 +2087,74 @@ static int check_ctor(Checker *c, uint32_t fam, const Ctor *ctor) {
     for (earlier = 0; earlier < j; earlier++)
       if (strcmp(name, ctor->fields[earlier].name) == 0)
         return FAIL(c, "REFUSE_NAME", "%s is already a field of this constructor (rule R4)", name);
-    if (!check_field(c, fam, &ctor->fields[j], &fields[j]))
+    if (!check_field(c, fam, &ctor->fields[j], ctor->field_count, dep ? (uint32_t)j : 0u, &fields[j]))
+      return 0;
+    if (dep && !push(c, name, here(c, fields[j].type)))
       return 0;
   }
+  for (j = 0; j < f->index_count; j++) {
+    indices[j] = check(c, ctor->indices[j], itypes[j]);
+    if (indices[j] == NULL)
+      return 0;
+  }
+  ci->depth = 0;
+  ci->type = NULL;
+  ci->ends = NULL;
+  if (ctor->result != NULL && !check_pctor(c, fam, ctor, fields, ci))
+    return 0;
+  for (j = 0; dep && j < ctor->field_count; j++)
+    pop(c);
   ci->name = ctor->name;
   ci->family = fam;
   ci->fields = fields;
   ci->field_count = (uint32_t)ctor->field_count;
+  ci->indices = indices;
   m->ctor_count++;
   return 1;
 }
 
-/* A family is in scope in its own fields, so a field can be recursive. */
+/* A family is in scope in its own fields, so a field can be recursive. A
+   program family with a type parameter must be a cell signature. */
 static int check_family(Checker *c, const Decl *d) {
   Machine *m = c->m;
   uint32_t fam = m->family_count;
   FamilyInfo *f = &m->families[fam];
   const Core **params = arena_alloc(m->arena, (d->param_count + 1u) * sizeof *params);
+  const Core **indices = arena_alloc(m->arena, (d->index_count + 1u) * sizeof *indices);
   size_t i;
-  if (params == NULL)
+  if (params == NULL || indices == NULL)
     return FAIL(c, "OOM", "out of memory");
   for (i = 0; i < d->param_count; i++) {
     uint64_t level = 0;
     params[i] = check_type(c, d->params[i].type, &level);
-    if (!push(c, d->params[i].name, here(c, params[i])))
+    if (params[i] == NULL || !push(c, d->params[i].name, here(c, params[i])))
+      return 0;
+  }
+  for (i = 0; i < d->index_count; i++) {
+    uint64_t level = 0;
+    indices[i] = check_type(c, d->indices[i], &level);
+    if (indices[i] == NULL)
       return 0;
   }
   f->name = d->name;
   f->param_types = params;
   f->param_count = (uint32_t)d->param_count;
+  f->index_types = indices;
+  f->index_count = (uint32_t)d->index_count;
   f->first_ctor = m->ctor_count;
   f->ctor_count = (uint32_t)d->ctor_count;
+  f->r1 = family_class(d, f);
   m->family_count++;
+  if (!type_index(c, f))
+    return 0;
+  if (f->r1 == FAMILY_CM && !cell_header(c, d, f))
+    return 0;
   c->self = fam;
   for (i = 0; i < d->ctor_count; i++) {
     if (!check_ctor(c, fam, &d->ctors[i]))
       return 0;
   }
-  return 1;
+  return f->r1 != FAMILY_CM || cell_generators(c, d, fam);
 }
 
 static int check_def(Checker *c, const Decl *d) {
@@ -1863,9 +2177,32 @@ static int check_def(Checker *c, const Decl *d) {
   return 1;
 }
 
+/* The term T ends in a universe: the syntax twin of cell_type_argument,
+   for check_decl, which runs before the family is checked. */
+static int term_type_argument(const Term *t) {
+  while (t != NULL && t->kind == TERM_PI)
+    t = t->right;
+  return t != NULL && t->kind == TERM_UNIV;
+}
+
+/* A program family with no type argument in its parameters or indices is
+   data, and only the domain declares data (rule R2). */
+static int program_data(const Decl *d) {
+  size_t k;
+  if (d->kind != DECL_FAMILY || d->origin != ORIGIN_PROGRAM)
+    return 0;
+  for (k = 0; k < d->param_count; k++)
+    if (term_type_argument(d->params[k].type))
+      return 0;
+  for (k = 0; k < d->index_count; k++)
+    if (term_type_argument(d->indices[k]))
+      return 0;
+  return 1;
+}
+
 static int check_decl(Checker *c, const Decl *d) {
-  if (d->kind == DECL_FAMILY && d->origin == ORIGIN_PROGRAM)
-    return FAIL(c, "REFUSE_DATA", "a program cannot declare a data type (rule R1); only domain/domain.lang can");
+  if (program_data(d))
+    return FAIL(c, "REFUSE_DATA", "a program cannot declare data with no type argument; a base type comes only from domain/domain.lang (rule R2)");
   if (d->kind == DECL_AXIOM)
     return FAIL(c, "REFUSE_AXIOM", "an axiom has no proof (rule R2)");
   if (d->is_rec)

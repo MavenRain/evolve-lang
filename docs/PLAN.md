@@ -443,7 +443,7 @@ on the new checks, docs, close (stage, commit message, next prompt).
 | S0 | kit seed, `design/DESIGN.md`, this plan, README, `AGENTS.md` | `make check` EXIT 0: examples 10 checked, 0 failed; parse refusals 9; check refusals 19; evals 32; ir 10 lowered; wasm 13 modules valid; differential 813 cases, 0 mismatches; gate 0 failures; review and domain regressions passed |
 | S1 | surface: Agda-like Unicode (Q7), `langc fmt`, `W_NONCANON`, `check --json` with progress counts; drop the refused kit names (port from leaf-lang e3e2338) | `make check` EXIT 0: examples 10 checked, 0 failed; parse refusals 9; check refusals 18; evals 30; ir 10 lowered; wasm 13 modules valid; differential 772 cases, 0 mismatches; fmt 50 canonical, 3 non-canonical pairs (round trip and idempotence); json 20 fixtures, diagnostics 31 codes (18 with a fixture, 13 with no fixture); gate 0 failures; review and domain regressions passed; mutants M1 to M6 killed (docs/STATUS.md, S1) |
 | S2a | kernel part 1: `I`, `i0`, `i1`, `PathP`, `Path`, `transp`, `hcomp`, systems and partial elements; remove the Ops that no program reaches (part of O14). Port of the frozen leaf-lang snapshot (section 8) | `make check` EXIT 0 with the snapshot counts: examples 10; parse refusals 10; check refusals 24; evals 50; ir 10; wasm 13; differential 773 cases, 0 mismatches; fmt 64 canonical, 5 non-canonical pairs; json 24 fixtures, diagnostics 36 codes (22 with a fixture, 14 with no fixture); diagnostic edit regressions passed; mutants on the `transp` face check, the system agreement check and the `hcomp` base check. Measured 2026-10-26: all counts as above, EXIT 0; M1 (`transp` face), M2 (system agreement), M3 (`hcomp` base) KILLED, 3 of 3 |
-| S2b | kernel part 2: indexed families (the `Step : State → State → U` shape, D3), higher constructors, `REFUSE_CELL` for type-parameter `data` (the CM criterion), `Option` (0-cell `none`, generator `some`), `Trunc` (1-cell `squash`). Port from quorum-lang 8dee55b | one check fixture for each refused shape (cons `List`, `Pair`, a type index, a ghost parameter); `Option` and `Trunc` check; `REFUSE_CELL` mutants |
+| S2b | kernel part 2: indexed families (the `Step : State → State → U` shape, D3), higher constructors, `REFUSE_CELL` for type-parameter `data` (the CM criterion), `Option` (0-cell `none`, generator `some`), `Trunc` (1-cell `squash`). Port from quorum-lang 8dee55b | one check fixture for each refused shape (cons `List`, `Pair`, a type index, a ghost parameter); `Option` and `Trunc` check; `REFUSE_CELL` mutants. Measured 2026-10-26: `make check` EXIT 0: examples 10; parse refusals 10; check refusals 37; evals 53; ir 10; wasm 13; differential 773 cases, 0 mismatches; fmt 81 canonical, 5 non-canonical pairs; json 26 fixtures, diagnostics 38 codes (24 with a fixture, 14 with no fixture); cubical 22 checks, 8 round trips. The builtin `Option` stays; the declared `Maybe` and `Trunc` check (`test/eval/cells.lang`). 14 mutants KILLED of 14 (docs/STATUS.md, S2b); M3 stillborn |
 | S2c | kernel part 3: CC (`Stream`: observation `head`, field `tail`), cofamily, the CC branch of `REFUSE_CELL`. Port from intent-lang 67445ae | `Stream` checks; CC refusal fixtures; mutants on the CC criterion |
 | S2d | kernel part 4: `Fin n` as the defined Sigma of 2.2; O12 (kit `Sum`, `Unit`), the rest of O14, O15 (ASCII value printer); `docs/STATUS.md` S2 section | `Fin` tests; full gate; mutants on the `Fin` bound |
 | S2e | univalence: `Glue`, `glue`, `unglue`, `ua` (2.2, law L3). Port from zkpolicy-lang 1d263fb. It must land before S6; it can run at any time after S2d | `ua` transport test; mutants on `transp_glue` and `hcomp_glue` |
@@ -537,3 +537,41 @@ USER ruling 2026-10-25, verbatim: "Rule a for Q1-Q14".
   `boolean`, `timestamptz` and `uuid`.
 - Q14 `lock_timeout` per stage. RULED (a). (a) 2 s by default, a protocol can set it.
   (b) 5 s. (c) no default; each protocol must set it.
+
+Questions from S2b (2026-10-26). OPEN: not ruled. The S2b build takes
+reading (a) of each.
+
+- Q-S2b-1 program data rule (2.1 against the S2b row). OPEN, reading (a).
+  (a) `REFUSE_DATA` for a program family with no type argument in its
+  params or indices; a family with a type argument runs the CM criterion,
+  and a passing CM is admitted in a program. (b) refuse closed data only
+  (quorum-lang); this contradicts 2.1. (c) `REFUSE_DATA` for all program
+  data, and a C unit test for the criterion.
+- Q-S2b-2 the place of the declared `Maybe` and `Trunc`. OPEN, reading
+  (a). (a) a program test file in S2b (`test/eval/cells.lang`); S3 decides
+  the domain placement. (b) `domain/domain.lang` now; the criterion must
+  then run on domain families.
+- Q-S2b-3 the builtin `Option`. OPEN, reading (a). (a) keep it in S2b, add
+  the declared CM twin `Maybe` (a declared `Option` gives `REFUSE_NAME`),
+  and remove or keep the builtin in S2d (O12, O14). (b) replace it now
+  (`lower.c`, `eval.c`, 3 examples, 2 fixtures, the differential).
+- Q-S2b-4 the path constructor surface. OPEN, reading (a). (a) `Path (F A)
+  s t`, no new token. (b) the quorum-lang `≡` token (lexer, fmt, grammar).
+- Q-S2b-5 dimension. OPEN, reading (a). (a) 1-cells only; a square gets
+  `REFUSE_CELL`; 2.2 needs only the 1-cell `squash`. (b) squares (quorum-lang
+  `Bag₀`, `trunc₀`).
+- Q-S2b-6 the names `List`, `nil`, `cons`. OPEN, reading (a). (a) keep the
+  dropped `NAME_UNKNOWN` rows (O16: `nil` returns for `Chain` in S3); the
+  hint now says "(S2d)". (b) the quorum-lang `REFUSE_CELL` rows.
+- Q-S2b-7 code-equivalent mutants. OPEN, reading (a). Three `REFUSE_CELL`
+  branches (cell header, path shape, path dimension) give the same code as
+  a later branch. (a) a line of `test/check/expect.txt` can pin a fixed
+  part of the message; M2, M7 and M8 are then KILLED. (b) record them as
+  code-equivalent.
+- Q-S2b-8 rule numbers in messages. OPEN, reading (a). The S2b messages
+  use the numbers of section 1: `REFUSE_CELL` is rule R1 and `REFUSE_DATA`
+  is rule R2. The kit messages keep the kit numbers: `REFUSE_AXIOM` is rule
+  R2, `REFUSE_REC` is rule R3 and `REFUSE_NAME` is rule R4. In section 1,
+  R3 is the host and R4 is the targets. (a) keep the messages in S2b (the
+  JSON fixtures pin them); a later slice gives the kit rules their own
+  names. (b) change the kit messages and their fixtures now.

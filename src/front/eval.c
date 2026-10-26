@@ -25,7 +25,7 @@ static const char *const OP_NAMES[] = {
   [OP_PARTIAL] = "Partial", [OP_SYSTEM] = "↦", [OP_SYSNIL] = "[]",
   [OP_FROMPARTIAL] = "fromPartial",
   [OP_TRANSP] = "transp", [OP_TPART] = "%tpart", [OP_TCOD] = "%tcod",
-  [OP_HCOMP] = "hcomp", [OP_SYSMAP] = "%sysmap"
+  [OP_HCOMP] = "hcomp", [OP_SYSMAP] = "%sysmap", [OP_PCTOR] = "?"
 };
 
 /* The number of arguments of each operation. VARIES: it comes from the
@@ -43,7 +43,7 @@ static const unsigned char OP_ARITY[] = {
   [OP_PLAM] = 1, [OP_PAPP] = 4, [OP_INEG] = 1, [OP_IMIN] = 2, [OP_IMAX] = 2,
   [OP_PARTIAL] = 2, [OP_SYSTEM] = 3, [OP_SYSNIL] = 0, [OP_FROMPARTIAL] = 1,
   [OP_TRANSP] = 3, [OP_TPART] = 1, [OP_TCOD] = 2,
-  [OP_HCOMP] = 4, [OP_SYSMAP] = 2
+  [OP_HCOMP] = 4, [OP_SYSMAP] = 2, [OP_PCTOR] = VARIES
 };
 
 typedef enum {
@@ -1135,6 +1135,7 @@ static const Value *transp_ctor(Machine *m, const Value *const *a, uint32_t n) {
   case OP_FALSE:
   case OP_PACK:
   case OP_CTOR:
+  case OP_PCTOR:
   case OP_EITHER:
   case OP_OPTION_ELIM:
   case OP_PURE:
@@ -1281,6 +1282,7 @@ static const Value *transp_op(Machine *m, const Value *h, const Value *const *a,
   case OP_SOME:
   case OP_PACK:
   case OP_CTOR:
+  case OP_PCTOR:
   case OP_EITHER:
   case OP_OPTION_ELIM:
   case OP_PURE:
@@ -1455,6 +1457,7 @@ static const Value *hcomp_op(Machine *m, const Value *const *a, uint32_t n) {
   case OP_SOME:
   case OP_PACK:
   case OP_CTOR:
+  case OP_PCTOR:
   case OP_EITHER:
   case OP_OPTION_ELIM:
   case OP_PURE:
@@ -1662,8 +1665,10 @@ static uint32_t varied_arity(const Machine *m, Op op, uint32_t inst) {
   const FamilyInfo *f = inst < m->family_count ? &m->families[inst] : NULL;
   if (op == OP_CTOR && c != NULL && c->family < m->family_count)
     return m->families[c->family].param_count + c->field_count;
+  if (op == OP_PCTOR && c != NULL && c->family < m->family_count)
+    return m->families[c->family].param_count + c->field_count + c->depth;
   if (op == OP_FAMILY && f != NULL)
-    return f->param_count;
+    return f->param_count + f->index_count;
   if (op == OP_FOLD_FAMILY && f != NULL)
     return f->ctor_count + 1u;
   return UINT32_MAX;
@@ -1677,10 +1682,29 @@ static int arity_ok(const Machine *m, Op op, uint32_t inst, uint32_t n) {
   return n == varied_arity(m, op, inst);
 }
 
+/* A path constructor at an end of its dimension is that end. The
+   arguments are the params and the fields, then one interval for each
+   dimension (S2 has dimension 1 only). */
+static const Value *reduce_pctor(Machine *m, uint32_t inst, const Value *const *a, uint32_t n) {
+  const CtorInfo *ci = inst < m->ctor_count ? &m->ctors[inst] : NULL;
+  const Env *env = NULL;
+  uint32_t d = ci != NULL ? ci->depth : 0u;
+  uint32_t i;
+  if (ci == NULL || ci->ends == NULL || d != 1u || d > n)
+    return internal(m, "a path constructor without ends");
+  for (i = 0; i + d < n; i++)
+    env = env_push(m, env, a[i]);
+  if (val_is(a[n - 1u], OP_I0) || val_is(a[n - 1u], OP_I1))
+    return eval_core(m, env, ci->ends[val_is(a[n - 1u], OP_I1) ? 1 : 0]);
+  return val_op(m, VAL_OP, OP_PCTOR, inst, 0, a, n);
+}
+
 static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, const Value *const *a, uint32_t n) {
   if (!arity_ok(m, op, inst, n))
     return internal(m, "an operation with the wrong number of arguments");
   switch (op) {
+  case OP_PCTOR:
+    return reduce_pctor(m, inst, a, n);
   case OP_NAT:
   case OP_BOOL:
   case OP_UNIT:
@@ -2035,7 +2059,7 @@ const Core *quote_value(Machine *m, uint32_t level, const Value *v) {
 const char *op_name(const Machine *m, Op op, uint32_t inst, uint32_t field) {
   if (op == OP_FAMILY)
     return inst < m->family_count ? m->families[inst].name : "?";
-  if (op == OP_CTOR)
+  if (op == OP_CTOR || op == OP_PCTOR)
     return inst < m->ctor_count ? m->ctors[inst].name : "?";
   if (op == OP_PROJ)
     return inst < m->ctor_count && field < m->ctors[inst].field_count ? m->ctors[inst].fields[field].name : "?";

@@ -118,11 +118,14 @@ static int dump(const char *file) {
     const Decl *d = &decls.items[i];
     printf("%s %s%s\n", DECL_KINDS[d->kind], d->name, d->is_rec ? " rec" : "");
     dump_fields("param", d->params, d->param_count, 1);
+    for (j = 0; j < d->index_count; j++) dump_term("index", d->indices[j], 1);
     dump_term("type", d->type, 1);
     dump_term("body", d->body, 1);
     for (j = 0; j < d->ctor_count; j++) {
+      size_t k;
       printf("  ctor %s\n", d->ctors[j].name);
       dump_fields("field", d->ctors[j].fields, d->ctors[j].field_count, 2);
+      for (k = 0; k < d->index_count; k++) dump_term("index", d->ctors[j].indices[k], 2);
     }
   }
   arena_release(&arena);

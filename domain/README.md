@@ -7,8 +7,10 @@ gen/embed.c` copies it into `build/domain.c`, so the domain is part of
 
 ## What the file holds
 
-- `data` declarations. Only this file can declare a data type. In a
-  program, `data` is refused with `REFUSE_DATA` (rule R1).
+- `data` declarations. Only this file can declare a data type with no
+  type argument (a base type). In a program, such `data` is refused with
+  `REFUSE_DATA` (rule R2). Program `data` with a type argument must be a
+  cell signature (`REFUSE_CELL`, rule R1).
 - Operations, written in the language. Each operation is a signature
   line and a clause line, as in a program (`SPEC.md` section 2.1).
 - Line comments that start with `--`.
@@ -60,8 +62,8 @@ time (`REFUSE_RUNTIME_TREE`, see `docs/host/CAPABILITY.md`).
 The definitions are `lineTotal`, `isRed` and `depth`.
 
 `data Tree` exists only for the tree mutant. The mutant checks that the
-lowering refuses a fold over a run-time tree. Rule R1 lets only this file
-declare a data type, so the data type must be here.
+lowering refuses a fold over a run-time tree. Rule R2 lets only this file
+declare a data type with no type argument, so the data type must be here.
 
 ## How to replace the domain
 

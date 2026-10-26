@@ -70,11 +70,17 @@ operations `natAdd natSub natMul natEq natLe`, and the Bool eliminator
 a pair, and `witness` and `payload` give its parts. `formers/tcc-wasm.md`
 gives the status of each former.
 
+A `data` declaration can have indices and path constructors of dimension
+1 (S2b). The core Op of a path constructor is `OP_PCTOR`. Its `CtorInfo`
+has `depth` (0 for a point constructor, 1 for a path constructor), `type`
+(its path type) and `ends` (2 * depth ends).
+
 The compiler enforces these rules:
 
 | Rule | Code | The compiler refuses |
 |---|---|---|
-| R1 | `REFUSE_DATA` | a `data` declaration in a program |
+| R1 | `REFUSE_CELL` | a `data` declaration in a program that has a type argument and is not a cell signature |
+| R2 | `REFUSE_DATA` | a `data` declaration in a program that has no type argument |
 | R2 | `REFUSE_AXIOM` | a `postulate` declaration |
 | R3 | `REFUSE_REC` | `rec`, or a definition that refers to itself or to a later definition |
 | R4 | `REFUSE_NAME` | a core name, a domain name, a reserved name or a repeated name as a new definition |
@@ -168,7 +174,8 @@ repository owner has not ruled on it.
 ## Domain slot
 
 `domain/domain.lang` holds the data types and the operations of the
-domain. Only this file can declare a data type (rule R1). `domain/README.md` tells
+domain. Only this file can declare a data type with no type argument (rule
+R2). `domain/README.md` tells
 how to replace the sample domain.
 
 ## Gate
@@ -179,13 +186,13 @@ how to replace the sample domain.
 |---|---|
 | `examples: 10 checked, 0 failed` | `langc check` accepts each `examples/*.lang` file |
 | `parse refusals: 10 checked` | each `test/parse` file fails with the code in `test/parse/expect.txt`; one file has 1100 nested parentheses |
-| `check refusals: 24 checked` | each `test/check` mutant fails with the code in `test/check/expect.txt`; the `TYPE_REFL` message shows both normal forms |
-| `evals: 50 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
+| `check refusals: 37 checked` | each `test/check` mutant fails with the code in `test/check/expect.txt`, and with the message text when the line has text after the code; the `TYPE_REFL` message shows both normal forms |
+| `evals: 53 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
 | `ir: 10 lowered` | `langc ir` lowers each example, with one `func` for each `abi` line |
 | `wasm: 13 modules valid` | `langc build` writes a module for each example and for `test/ir/spine.lang`, `test/ir/lazy.lang` and `test/ir/proof-trap.lang`; `wasm-validate` and `wasm-objdump -x` accept it |
 | `differential: 773 cases, 0 mismatches` | node runs each entry on the grid of `test/grid.awk`; each result is equal to the `langc eval` result, and a trap is equal to a trap |
-| `fmt: 64 canonical, 5 non-canonical pairs` | `langc fmt` keeps each committed `.lang` file and each canonical `test/fmt` file the same; it is idempotent, and its output parses to the same terms; each non-canonical `test/fmt` input gives its expected canonical text |
-| `json: 24 fixtures; diagnostics: 36 codes, 22 with a fixture, 14 with no fixture` | each `test/json` fixture gives the JSON shape of its code; each fixture code is in `docs/DIAGNOSTICS.md` |
+| `fmt: 81 canonical, 5 non-canonical pairs` | `langc fmt` keeps each committed `.lang` file and each canonical `test/fmt` file the same; it is idempotent, and its output parses to the same terms; each non-canonical `test/fmt` input gives its expected canonical text |
+| `json: 26 fixtures; diagnostics: 38 codes, 24 with a fixture, 14 with no fixture` | each `test/json` fixture gives the JSON shape of its code; each fixture code is in `docs/DIAGNOSTICS.md` |
 | `gate: 0 failures` | the sum of all failures |
 
 The gate also checks the usage and IO exit codes, five `eval` refusals,

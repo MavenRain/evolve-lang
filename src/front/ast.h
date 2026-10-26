@@ -38,6 +38,8 @@ typedef struct {
   const char *name;
   const Field *fields;
   size_t field_count;
+  const Term **indices; /* the result indices: one for each index of the family */
+  const Term *result;   /* a path constructor: its type Path (F A) s t; NULL for a point constructor */
   int line;
   int col;
 } Ctor;
@@ -67,6 +69,8 @@ typedef struct {
   const Term *body;
   const Field *params;
   size_t param_count;
+  const Term **indices; /* the index types of `data F params : A1 → .. → Type` */
+  size_t index_count;
   const Ctor *ctors;
   size_t ctor_count;
 } Decl;

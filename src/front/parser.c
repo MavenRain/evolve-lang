@@ -622,15 +622,27 @@ static int parse_def(Parser *p, Decl *d) {
 }
 
 /* A constructor result is the data type applied to its parameters in
-   order. */
-static int ctor_result_ok(const Decl *d, const Term *t) {
+   order, then to one term for each index. INDICES gets the index terms. */
+static int ctor_result_ok(const Decl *d, const Term *t, const Term **indices) {
   const Term *head = t;
+  for (size_t i = d->index_count; i > 0; i--) {
+    if (head->kind != TERM_APP) return 0;
+    indices[i - 1] = head->right;
+    head = head->left;
+  }
   for (size_t i = d->param_count; i > 0; i--) {
     int ok = head->kind == TERM_APP && head->right->kind == TERM_VAR && strcmp(head->right->name, d->params[i - 1].name) == 0;
     if (!ok) return 0;
     head = head->left;
   }
   return head->kind == TERM_VAR && strcmp(head->name, d->name) == 0;
+}
+
+/* A path constructor result `Path X s t` (Q-S2b-4 (a)): the name Path
+   applied to three terms. check_pctor checks X, s and t. */
+static int path_result(const Term *t) {
+  return t->kind == TERM_APP && t->left->kind == TERM_APP && t->left->left->kind == TERM_APP &&
+         t->left->left->left->kind == TERM_VAR && strcmp(t->left->left->left->name, "Path") == 0;
 }
 
 /* FOUND is the source text of the constructor type. */
@@ -659,9 +671,16 @@ static int split_ctor(Parser *p, const Decl *d, Ctor *ctor, const Term *type, si
   for (size_t i = 0; i < d->param_count && used < sizeof result; i++) {
     used += (size_t)snprintf(result + used, sizeof result - used, " %s", d->params[i].name);
   }
+  for (size_t i = 0; i < d->index_count && used < sizeof result; i++) {
+    used += (size_t)snprintf(result + used, sizeof result - used, " i%zu", i + 1);
+  }
   char why[320];
   snprintf(why, sizeof why, "must end in %s", result);
-  if (!ctor_result_ok(d, t)) return ctor_fail(p, ctor, type_start, result, why);
+  const Term **indices = d->index_count == 0 ? NULL : arena_alloc(p->arena, d->index_count * sizeof *indices);
+  if (d->index_count > 0 && indices == NULL) return oom(p);
+  ctor->result = d->index_count == 0 && path_result(t) ? t : NULL;
+  if (ctor->result == NULL && !ctor_result_ok(d, t, indices)) return ctor_fail(p, ctor, type_start, result, why);
+  ctor->indices = indices;
   Field *fields = count == 0 ? NULL : arena_alloc(p->arena, count * sizeof *fields);
   if (count > 0 && fields == NULL) return oom(p);
   const Term *f = type;
@@ -693,6 +712,24 @@ static int at_ctor(const Parser *p, int column) {
   return cur(p)->kind != TOK_EOF && first_on_line(p) && cur(p)->col == column;
 }
 
+/* `A1 → .. → Am → Type`: each Ai is an index type. A `Type` with a level
+   after it is a universe index, not the end of the head. */
+static int parse_head(Parser *p, Decl *d) {
+  const Term **items = NULL;
+  size_t count = 0;
+  size_t cap = 0;
+  while (!at(p, TOK_KW_TYPE) || peek_at(p, 1)->kind == TOK_NAT) {
+    items = grow(p, items, count, &cap, sizeof *items);
+    if (items == NULL) return 0;
+    items[count] = parse_app(p);
+    if (items[count] == NULL || !expect(p, TOK_ARROW, "'→'")) return 0;
+    count++;
+  }
+  d->indices = items;
+  d->index_count = count;
+  return expect(p, TOK_KW_TYPE, "'Type'");
+}
+
 static int parse_data(Parser *p, Decl *d) {
   bump(p);
   d->kind = DECL_FAMILY;
@@ -701,7 +738,7 @@ static int parse_data(Parser *p, Decl *d) {
   if (d->name == NULL) return 0;
   p->def = d->name;
   if (!parse_fields(p, &d->params, &d->param_count)) return 0;
-  if (!expect(p, TOK_COLON, "':'") || !expect(p, TOK_KW_TYPE, "'Type'") || !expect(p, TOK_KW_WHERE, "'where'")) return 0;
+  if (!expect(p, TOK_COLON, "':'") || !parse_head(p, d) || !expect(p, TOK_KW_WHERE, "'where'")) return 0;
   if (!at(p, TOK_IDENT) || !first_on_line(p)) return fail_at(p, cur(p), "a constructor on a new indented line");
   int column = cur(p)->col;
   Ctor *ctors = NULL;

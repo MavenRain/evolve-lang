@@ -67,7 +67,8 @@ typedef enum {
   OP_TPART,      /* internal: a part of a type, field = the part */
   OP_TCOD,       /* internal: the codomain of a Pi or Sigma at x: [T, x] */
   OP_HCOMP,      /* hcomp A φ side u0: [A, φ, side, u0] */
-  OP_SYSMAP      /* internal: f on each branch of a system: [f, sys] */
+  OP_SYSMAP,     /* internal: f on each branch of a system: [f, sys] */
+  OP_PCTOR       /* a path constructor: the params, the fields, then one interval for each dimension */
 } Op;
 
 /* The instance of pure, map and bind (former F5). */
@@ -145,7 +146,7 @@ struct Value {
 
 typedef struct {
   const char *name;
-  const Core *type; /* in the context of the family parameters */
+  const Core *type; /* in the context of the family parameters (and the earlier fields of an indexed family) */
   int recursive;    /* the field type is the family itself */
 } FieldInfo;
 
@@ -154,10 +155,23 @@ typedef struct {
   uint32_t family;
   const FieldInfo *fields;
   uint32_t field_count;
+  const Core *const *indices; /* result indices in the parameter context, plus fields for a telescope */
+  uint32_t depth;             /* 0: a point constructor; 1: a path constructor (S2 has dimension 1 only) */
+  const Core *type;           /* a path constructor: its path type; NULL for a point constructor */
+  const Core *const *ends;    /* 2 * depth ends in the context of the params and all the fields */
 } CtorInfo;
 
-/* A domain family. Its constructors are ctors[first_ctor ...]. A family
-   with one constructor has one projection for each field. */
+/* The R1 class of a family: a domain base type, a program cell monad (a
+   type parameter), or a program family with value parameters or indices
+   only. */
+typedef enum {
+  FAMILY_BASE,
+  FAMILY_CM,
+  FAMILY_INDEXED
+} FamilyClass;
+
+/* A family. Its constructors are ctors[first_ctor ...]. A family with one
+   constructor has one projection for each field. */
 typedef struct {
   const char *name;
   const Core *const *param_types;
@@ -165,6 +179,9 @@ typedef struct {
   uint32_t first_ctor;
   uint32_t ctor_count;
   uint64_t universe; /* the largest universe of a constructor field */
+  const Core *const *index_types; /* in the context of the parameters */
+  uint32_t index_count;
+  FamilyClass r1;
 } FamilyInfo;
 
 typedef struct {

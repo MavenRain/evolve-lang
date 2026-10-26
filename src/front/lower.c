@@ -661,6 +661,7 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_TCOD:
   case OP_HCOMP:
   case OP_SYSMAP:
+  case OP_PCTOR:
     return runtime_path(l);
   case OP_TRUE:
     return give(l, out, 1, 0);
@@ -1025,6 +1026,7 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_TCOD:
   case OP_HCOMP:
   case OP_SYSMAP:
+  case OP_PCTOR:
     return runtime_path(l);
   case OP_WITNESS:
     return field_of(l, b, v->args[0], 0, out);

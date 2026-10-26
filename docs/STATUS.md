@@ -207,3 +207,81 @@ Each mutant makes `make check` fail on its own `test/check` file:
 - `test/cubical.c` runs 17 checking regressions and 8 normalized-source
   round trips. The same suite fails against the original staged kernel.
   `make check` and an AddressSanitizer/UndefinedBehaviorSanitizer run pass.
+
+## S2b: kernel part 2 (indexed families, path constructors, `REFUSE_CELL`)
+
+S2b adds indexed families (the `Step` shape, D3), path constructors of
+dimension 1 (`Path (F A) s t`, Q-S2b-4 (a), Q-S2b-5 (a)) and the CM
+criterion for program data with a type argument (`REFUSE_CELL`, rule R1).
+Program data with no type argument in its params or indices gets
+`REFUSE_DATA` (Q-S2b-1 (a)). A family or a fold outside the S2 data rules
+gets `DOMAIN_FAMILY`. The builtin `Option` stays (Q-S2b-3 (a)).
+`test/eval/cells.lang` declares the CM twin `Maybe` and `Trunc` with the
+1-cell `squash` (Q-S2b-2 (a)).
+
+### Source
+- quorum-lang 8dee55b, read only through `git show`. S2b is a hand port,
+  not a patch. It changes 23 files and adds 17 files. S2b read no file of
+  the leaf-lang repository.
+
+### Gate counts against S2a
+
+| Count | S2a | S2b |
+|---|---|---|
+| examples | 10 | 10 |
+| parse refusals | 10 | 10 |
+| check refusals | 24 | 37 |
+| evals | 50 | 53 |
+| ir lowered | 10 | 10 |
+| wasm modules | 13 | 13 |
+| differential cases (0 mismatches) | 773 | 773 |
+| fmt canonical, non-canonical pairs | 64, 5 | 81, 5 |
+| json fixtures | 24 | 26 |
+| diagnostics codes (fixture, no fixture) | 36 (22, 14) | 38 (24, 14) |
+| cubical checks, round trips | 17, 8 | 22, 8 |
+
+The gate has 0 failures. The review, domain and diagnostic edit
+regressions pass.
+
+### Mutants
+Each mutant edits one branch of `src/front/check.c`. The 14 mutants that
+build are all KILLED. M3 does not build.
+
+| Mutant | Branch | Result |
+|---|---|---|
+| M1 | type index | KILLED: `cell-type-index.lang` gives exit 0 |
+| M2 | cell header (a parameter that is not a universe) | KILLED by the pin "is not a universe" of `cell-value-param.lang` |
+| M3 | one field (`return 1 ? 1 :`) | STILLBORN: clang -Werror -Wunused-parameter stops the build |
+| M3b | one field (`field_count >= 1u`) | KILLED by the pin "must be the one field of its constructor" of `cell-pair.lang` and `cell-list.lang`, and by the JSON message of `test/json/REFUSE_CELL.lang` |
+| M4 | general field rule | KILLED: `cell-field.lang` (`DOMAIN_FAMILY`) |
+| M5 | no generator | KILLED: `cell-ghost.lang` |
+| M6 | more than one generator | KILLED: `cell-two-gen.lang` |
+| M7 | path constructor shape | KILLED by the pin "must have the type Path T s t" of `cell-path-shape.lang` |
+| M8 | path constructor dimension | KILLED by the pin "has dimension 2" of `cell-path-dim.lang` |
+| M9 | path constructor end | KILLED: `cell-path-end.lang` |
+| M10 | `REFUSE_DATA` | KILLED: `data.lang` and 2 more FAIL lines |
+| M11 | fold over an indexed family | KILLED: `index-fold.lang` and 2 more FAIL lines |
+| M12 | fold over a higher inductive family | KILLED: `hit-fold.lang` |
+| A1 | admit side: the param split collapsed | KILLED: both entries of `test/eval/cells.lang` |
+| A2 | admit side: each path end refused | KILLED: both entries of `test/eval/cells.lang` |
+
+Without the pins, M2, M7 and M8 survive: a later branch gives the same
+code (Q-S2b-7). A line of `test/check/expect.txt` can now have text after
+the code. The first stderr line must then contain that text
+(`test/gate.sh`).
+
+### Op values
+51 Op values (S2a: 50). S2b adds `OP_PCTOR`. `CtorInfo` has `depth` (0
+for a point constructor, 1 for a path constructor), `type` (the path type
+of a path constructor) and `ends` (2 * depth ends).
+
+### Open items from S2b
+- The builtin `Option` stays. S2d removes or keeps it (Q-S2b-3 (a), O12,
+  O14).
+- A square (dimension 2) gets `REFUSE_CELL` (Q-S2b-5 (a)).
+- The `DOMAIN_FAMILY` guard "path constructor outside a cell signature"
+  is not reachable from a program under Q-S2b-1 (a).
+- The messages use two sets of rule numbers (Q-S2b-8). S2b corrects the
+  docs that said that a program cannot declare `data` (`SPEC.md`,
+  `domain/README.md`, `formers/tcc-wasm.md`, `docs/host/README.md`).
+- Q-S2b-1 to Q-S2b-8 are open (PLAN section 11).

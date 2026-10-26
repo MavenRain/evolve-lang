@@ -18,20 +18,24 @@ mkdir -p "$tmp"
 awk 'BEGIN { printf "deep : ℕ\ndeep = " } { } END {
   for (i = 0; i < 1100; i++) printf "("; printf "1"; for (i = 0; i < 1100; i++) printf ")"; print "" }' </dev/null >"$tmp/deep.lang"
 
-# refusals DIR LABEL: each line of DIR/expect.txt is `FILE CODE`. `langc check`
-# must exit 1 and print `langc: CODE: ...` on stderr.
+# refusals DIR LABEL: each line of DIR/expect.txt is `FILE CODE [TEXT]`.
+# `langc check` must exit 1 and print `langc: CODE: ...` on stderr. If the
+# line has TEXT, the first stderr line must also contain TEXT as a fixed
+# string. TEXT pins the branch that refuses when two branches give one code.
 refusals() {
   checked=0
-  while read -r file code; do
+  while read -r file code text; do
     path="$1/$file"
     [ "$file" = "deep.lang" ] && path="$tmp/deep.lang"
+    want="$code"
+    [ -n "$text" ] && want="$code with \"$text\""
     status=0
     build/langc check "$path" 2>"$tmp/err" >/dev/null || status=$?
     first=$(head -n 1 "$tmp/err")
     checked=$((checked + 1))
     case "$status:$first" in
-      "1:langc: $code: "*) ;;
-      *) echo "FAIL $file: want exit 1 and $code, got exit $status: $first"; fail=$((fail + 1)) ;;
+      "1:langc: $code: "*"$text"*) ;;
+      *) echo "FAIL $file: want exit 1 and $want, got exit $status: $first"; fail=$((fail + 1)) ;;
     esac
   done <"$1/expect.txt"
   echo "$2 refusals: $checked checked"
@@ -258,7 +262,7 @@ done
 # docs/DIAGNOSTICS.md has one row for each code in src/. Each code has
 # test/json/CODE.lang (its first JSON line has that code), or its row gives
 # "no fixture:" and a reason; not the two.
-rg -o -I -N -r '$1$2$3' '"((?:LEX|PARSE|REFUSE|TYPE|NAME|EVAL|W)_[A-Z_]+)"|"(OOM|IO|IO_SIZE|USAGE|INTERNAL)"|langc: ((?:EVAL|REFUSE|TYPE)_[A-Z_]+):' src |
+rg -o -I -N -r '$1$2$3' '"((?:LEX|PARSE|REFUSE|TYPE|NAME|EVAL|DOMAIN|W)_[A-Z_]+)"|"(OOM|IO|IO_SIZE|USAGE|INTERNAL)"|langc: ((?:EVAL|REFUSE|TYPE)_[A-Z_]+):' src |
   LC_ALL=C sort -u >"$tmp/src-codes.txt"
 rg -o -N -r '$1' '^\| `([A-Z_]+)` \|' docs/DIAGNOSTICS.md | LC_ALL=C sort -u >"$tmp/doc-codes.txt"
 if ! cmp -s "$tmp/src-codes.txt" "$tmp/doc-codes.txt"; then

@@ -7,14 +7,16 @@ versions still run, for multi-tenant rollouts with tenants at mixed stages,
 and for resumable backfills. Do not use it for general SQL, data analysis
 or other SQL dialects.
 
-## Status (S2a)
+## Status (S2b)
 
 The evolve-lang surface (`SPEC.md` section 2), `langc fmt`,
 `langc check --json` and the first part of the cubical kernel (`I`,
-`PathP`, `Path`, `transp`, `hcomp`, systems) are built. The domain
-(tables, apps, protocols), the checker, `langc mcp`, the SQL writer,
-`SKILL.md` and the graded examples
-are planned (`docs/PLAN.md` section 7 and section 9). Do not cite them as
+`PathP`, `Path`, `transp`, `hcomp`, systems) are built. S2b adds indexed
+families, path constructors of dimension 1 in cell signatures and the
+refusal codes `REFUSE_CELL` and `DOMAIN_FAMILY` (a hand port from
+quorum-lang 8dee55b). The domain (tables, apps, protocols), the checker,
+`langc mcp`, the SQL writer, `SKILL.md` and the graded examples are
+planned (`docs/PLAN.md` section 7 and section 9). Do not cite them as
 built.
 
 ## Commands that work now

@@ -48,3 +48,6 @@ test/eval/path hOne => fun e => 0
 test/eval/path hNat => fun i => 3
 test/eval/path hSig => fun i => pack 1 2
 test/eval/path tPath => fun j => 2
+test/eval/families hopStart 4 => 4
+test/eval/cells orZeroJust => 5
+test/eval/cells orZeroNothing => 0

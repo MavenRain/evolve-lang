@@ -221,10 +221,18 @@ static void put_ctor(FmtText *out, const Decl *d, const Ctor *c) {
     put_group(out, c->fields[i].name, c->fields[i].type);
     put_str(out, " " SYM_ARROW " ");
   }
+  if (c->result != NULL) {
+    put_term(out, c->result, LEVEL_BINDER);
+    return;
+  }
   put_str(out, d->name);
   for (size_t i = 0; i < d->param_count; i++) {
     put_str(out, " ");
     put_str(out, d->params[i].name);
+  }
+  for (size_t i = 0; i < d->index_count; i++) {
+    put_str(out, " ");
+    put_term(out, c->indices[i], LEVEL_ATOM);
   }
 }
 
@@ -236,7 +244,12 @@ static void put_data(FmtText *out, const Decl *d) {
     put_str(out, " ");
     put_group(out, d->params[i].name, d->params[i].type);
   }
-  put_str(out, " : Type where");
+  put_str(out, " : ");
+  for (size_t i = 0; i < d->index_count; i++) {
+    put_term(out, d->indices[i], LEVEL_APP);
+    put_str(out, " " SYM_ARROW " ");
+  }
+  put_str(out, "Type where");
   for (size_t i = 0; i < d->ctor_count; i++) put_ctor(out, d, &d->ctors[i]);
 }
 

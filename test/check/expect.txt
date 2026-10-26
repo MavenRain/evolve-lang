@@ -22,3 +22,16 @@ transp-const.lang TYPE_LINE
 transp-face.lang TYPE_LINE
 transp-name.lang REFUSE_NAME
 hcomp-base.lang TYPE_SYSTEM
+index-mismatch.lang TYPE_MISMATCH
+index-fold.lang DOMAIN_FAMILY
+cell-list.lang REFUSE_CELL must be the one field of its constructor
+cell-pair.lang REFUSE_CELL must be the one field of its constructor
+cell-ghost.lang REFUSE_CELL
+cell-type-index.lang REFUSE_CELL
+cell-value-param.lang REFUSE_CELL is not a universe
+cell-field.lang REFUSE_CELL
+cell-two-gen.lang REFUSE_CELL
+cell-path-shape.lang REFUSE_CELL must have the type Path T s t
+cell-path-dim.lang REFUSE_CELL has dimension 2
+cell-path-end.lang REFUSE_CELL
+hit-fold.lang DOMAIN_FAMILY

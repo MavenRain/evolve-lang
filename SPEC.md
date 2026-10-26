@@ -58,12 +58,14 @@ data Lot (size : ℕ) : Type where
   Pi binder of a constructor type is a field: `(itemPrice : ℕ)` gives the
   field `itemPrice`.
 
-The compiler refuses these forms in a program: `data` (`REFUSE_DATA`),
-`postulate` (`REFUSE_AXIOM`), and `rec` or a reference to the same or a
-later definition (`REFUSE_REC`, rule R3). It also refuses a declaration
-that uses a core name, a domain name, the reserved word `Text` or a name
-that is already declared (`REFUSE_NAME`). Thus a program cannot add a data
-type, an unproved fact or general recursion. Recursion comes only from
+The compiler refuses these forms in a program: `data` with no type
+argument (`REFUSE_DATA`, rule R2), `data` with a type argument that is not
+a cell signature (`REFUSE_CELL`, rule R1), `postulate` (`REFUSE_AXIOM`),
+and `rec` or a reference to the same or a later definition (`REFUSE_REC`,
+rule R3). It also refuses a declaration that uses a core name, a domain
+name, the reserved word `Text` or a name that is already declared
+(`REFUSE_NAME`). Thus a program cannot add a base type, an unproved fact
+or general recursion. Recursion comes only from
 `fold` (F6). The compiler writes the target; a program cannot.
 
 ### 2.2 Grammar

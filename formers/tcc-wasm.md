@@ -54,8 +54,9 @@ F15: a domain data type can take index parameters, for example
 `data Lot (size : ℕ) : Type where` with the constructor
 `makeLot : (lotPrice : ℕ) → Lot size`. A constructor takes the indices
 first (`makeLot 3 250 : Lot 3`). The checker keeps `Lot 3` and `Lot 4`
-apart. A program cannot declare a data type (rule R1). No test has a field
-type that refers to an index. The index erases on Wasm.
+apart. A program cannot declare a data type with no type argument (rule
+R2). No test has a field type that refers to an index. The index erases
+on Wasm.
 
 The refusal mutants are in `test/check/`: R1 `data.lang`, R2 `axiom.lang`,
 R3 `rec.lang`, `self.lang` and `later.lang`, R4 `core-name.lang`,

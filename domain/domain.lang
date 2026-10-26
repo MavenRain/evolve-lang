@@ -22,6 +22,10 @@ data Tree : Type where
 data Lot (size : ℕ) : Type where
   makeLot : (lotPrice : ℕ) → Lot size
 
+-- An indexed family (S2b): `Hop m n` is one step from m to n.
+data Hop : ℕ → ℕ → Type where
+  up : (hopFrom : ℕ) → Hop hopFrom (natAdd hopFrom 1)
+
 lineTotal : (item : Item) → ℕ
 lineTotal item = natMul (itemPrice item) (itemCount item)
 
