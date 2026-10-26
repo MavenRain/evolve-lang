@@ -134,3 +134,76 @@ them to the S1 surface only.
 - O16: `nil` is in the S1 list of dropped kit names (`NAME_UNKNOWN` with a
   hint). PLAN 3.2 admits `nil` and `snoc` as the `Chain` constructors. S3
   removes `nil` from that list when it adds `Chain`.
+
+## S2a: kernel part 1 (interval, paths, `transp`, `hcomp`, systems)
+
+S2a adds the interval `I` with `i0`, `i1`, `~`, `∧` and `∨`; `PathP` and
+`Path`; `transp`; `hcomp`; `Partial` and systems `[ φ ↦ u , ... ]`. `Eq`
+is a dropped name: use `Path A x y`. `refl`, `symm`, `trans`, `cong` and
+`transport` stay.
+
+### Source
+- The frozen leaf-lang S2 working tree of 2026-10-26 (leaf-lang base
+  e3e2338, its U4 point, gate EXIT 0). Patch
+  `leaf-s2-wt-on-e3e2338.patch`, sha256 be7912102f3ee04f (first 16 hex
+  digits). S2a read no file of the leaf-lang repository.
+- `git apply --exclude=docs/PLAN.md`: no reject. The patch changes 21
+  files and adds 17 files.
+
+### Dropped hunks
+- All `docs/PLAN.md` hunks. They are leaf-lang plan text.
+- No other hunk. The name search (`leaf`, `xmss`, `wots`, `sphincs`,
+  `lamport`, `signature`) finds 22 lines in the patch: 18 are in the
+  `docs/PLAN.md` hunks, and 4 are the C name `parse_leaf` or "signature"
+  as a type signature. No line names leaf-lang. No hunk has a leaf-lang
+  domain name (PLAN 3.2).
+
+### Gate counts against S1
+
+| Count | S1 | S2a |
+|---|---|---|
+| examples | 10 | 10 |
+| parse refusals | 9 | 10 |
+| check refusals | 18 | 24 |
+| evals | 30 | 50 |
+| ir lowered | 10 | 10 |
+| wasm modules | 13 | 13 |
+| differential cases (0 mismatches) | 772 | 773 |
+| fmt canonical, non-canonical pairs | 50, 3 | 64, 5 |
+| json fixtures | 20 | 24 |
+| diagnostics codes (fixture, no fixture) | 31 (18, 13) | 36 (22, 14) |
+
+Each S2a count is equal to the count in the snapshot gate log. The gate
+has 0 failures. The review, domain and diagnostic edit regressions pass.
+The S1 review behavior stays: the `W_NONCANON` span covers exactly the
+non-canonical text.
+
+### Mutants
+Each mutant makes `make check` fail on its own `test/check` file:
+- M1: no `transp` face constancy check (`rule_transp`):
+  `transp-face.lang` gives exit 0. KILLED.
+- M2: no system agreement check (`rule_system`): `system-disagree.lang`
+  gives exit 0. KILLED.
+- M3: no `hcomp` base face check (`rule_hcomp`): `hcomp-base.lang` gives
+  exit 0. KILLED.
+
+### Op values
+50 Op values (S1: 47). S2a removes `OP_PROD`, `OP_LIST`, `OP_EQ`,
+`OP_UNFOLD` and `OP_FILTER` (part of O14).
+
+### Open items from S2a (PLAN O18)
+- The face tests are conservative where an atom of a meet stays free.
+- Two systems convert by structure, in order (no order-free conversion).
+- A system has at most `FACE_MEETS_MAX` cells (`TYPE_SYSTEM`).
+
+### Review corrections
+
+- `hcomp` faces resolve names under the side binder, then must be
+  independent of it. Its binder annotation is checked in the outer scope.
+- Conversion uses the enclosing system faces in path endpoints, `refl`,
+  path combinators and binder annotations.
+- The value printer omits the internal type and face arguments of
+  `hcomp`, and annotates the interval binder of a printed `PathP` line.
+- `test/cubical.c` runs 17 checking regressions and 8 normalized-source
+  round trips. The same suite fails against the original staged kernel.
+  `make check` and an AddressSanitizer/UndefinedBehaviorSanitizer run pass.

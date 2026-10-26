@@ -7,11 +7,13 @@ versions still run, for multi-tenant rollouts with tenants at mixed stages,
 and for resumable backfills. Do not use it for general SQL, data analysis
 or other SQL dialects.
 
-## Status (S1)
+## Status (S2a)
 
-The evolve-lang surface (`SPEC.md` section 2), `langc fmt` and
-`langc check --json` are built. The domain (tables, apps, protocols), the
-checker, `langc mcp`, the SQL writer, `SKILL.md` and the graded examples
+The evolve-lang surface (`SPEC.md` section 2), `langc fmt`,
+`langc check --json` and the first part of the cubical kernel (`I`,
+`PathP`, `Path`, `transp`, `hcomp`, systems) are built. The domain
+(tables, apps, protocols), the checker, `langc mcp`, the SQL writer,
+`SKILL.md` and the graded examples
 are planned (`docs/PLAN.md` section 7 and section 9). Do not cite them as
 built.
 

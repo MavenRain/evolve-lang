@@ -56,6 +56,19 @@ Readings RULED (a) by the USER on 2026-10-25 (section 11):
   terms (Q9).
 - Rollout: deploy and retire steps are fleet barriers (Q10).
 
+USER ruling (2026-10-26, request and AskUserQuestion), the decoupling
+from leaf-lang:
+
+- The evolve-lang slices do not wait for a leaf-lang commit. S2 splits
+  into S2a to S2e (section 9). Each part ports from a fixed source that
+  is on disk now (section 8).
+- S2a ports the leaf-lang S2 working tree, frozen on 2026-10-26 at its
+  GREEN U4 point, as one patch on leaf-lang e3e2338 (section 8). After
+  S2a, evolve-lang reads no later leaf-lang state (O17).
+
+Readings (NOT ruled): the S2b to S2e sources in section 8 (quorum-lang
+8dee55b, intent-lang 67445ae, zkpolicy-lang 1d263fb).
+
 ## 2. The reading of R1
 
 ### 2.1 The precedent reading
@@ -402,18 +415,21 @@ EXTRA.
 | 6. A token-count comparison against Python and Rust | `docs/TOKEN-BASELINE.md`: the rename protocol with its compatibility check in evolve-lang, Python and Rust; the tokenizer is named (Q12); a script gives the counts | S9 | the script output equals the counts in the file |
 | EXTRA | the Wasm oracle (5.3) lets an agent with no C toolchain read verdicts | S7 | differential gate |
 
-## 8. Port sources (pinned 2026-10-25)
+## 8. Port sources (pinned 2026-10-25; S2 rows 2026-10-26)
 
 | Repo | SHA | What |
 |---|---|---|
 | lang-template | 5265a2a | `hosts/tcc-wasm` (the seed); `hosts/tcc-json/src/json.{c,h}` (the report writer) |
 | leaf-lang | e3e2338 | S1 surface: Agda-like Unicode, `langc fmt`, `check --json`; PLAN shape |
 | quorum-lang | 7afa479 | S1 surface (second source); PLAN 2; D11 indexed families |
-| intent-lang | 67445ae | `REFUSE_CELL`, cofamily; PLAN 2.2 |
+| intent-lang | 67445ae | `REFUSE_CELL`, cofamily; PLAN 2.2; S2c: the CC branch of `REFUSE_CELL`, `Stream` |
 | resolve-lang | 510c137 | `REFUSE_CELL` (second implementation) |
 | mandate-lang | 17d50a4 | the free cell monad of operations (PLAN 4.6), for `Guard` |
 | agent-lang | 06854bf | no JSON diagnostics (leaf-lang S1 read it; `json.c` writes the Json target) |
 | dil-lang | 9e57528 | no JSON diagnostics (leaf-lang S1 read it; `--json` is a build output path) |
+| leaf-lang | e3e2338 + working-tree snapshot (2026-10-26, patch sha256 be7912102f3ee04f) | S2a: `I`, `PathP`, `Path`, `transp`, `hcomp`, systems; the unreachable Ops removed (leaf-lang S2 units U1 to U4). Frozen: no later leaf-lang state is read (O17) |
+| quorum-lang | 8dee55b | S2b: indexed families (D11), higher constructors, `REFUSE_CELL` for CMs (no `record` form, no parameter sections) |
+| zkpolicy-lang | 1d263fb | S2e: `Glue`, `glue`, `unglue`, `ua` (`transp_glue`, `hcomp_glue`) |
 
 No *-lang repository has an MCP server in C yet (O3).
 
@@ -426,7 +442,11 @@ on the new checks, docs, close (stage, commit message, next prompt).
 |---|---|---|
 | S0 | kit seed, `design/DESIGN.md`, this plan, README, `AGENTS.md` | `make check` EXIT 0: examples 10 checked, 0 failed; parse refusals 9; check refusals 19; evals 32; ir 10 lowered; wasm 13 modules valid; differential 813 cases, 0 mismatches; gate 0 failures; review and domain regressions passed |
 | S1 | surface: Agda-like Unicode (Q7), `langc fmt`, `W_NONCANON`, `check --json` with progress counts; drop the refused kit names (port from leaf-lang e3e2338) | `make check` EXIT 0: examples 10 checked, 0 failed; parse refusals 9; check refusals 18; evals 30; ir 10 lowered; wasm 13 modules valid; differential 772 cases, 0 mismatches; fmt 50 canonical, 3 non-canonical pairs (round trip and idempotence); json 20 fixtures, diagnostics 31 codes (18 with a fixture, 13 with no fixture); gate 0 failures; review and domain regressions passed; mutants M1 to M6 killed (docs/STATUS.md, S1) |
-| S2 | kernel port: Path, Sigma, Pi, U, `I`, `transp`, `hcomp`, `REFUSE_CELL`, cofamily, indexed families, `Fin`, `Option`, `Trunc`, `Stream` | port tests; `REFUSE_CELL` mutants |
+| S2a | kernel part 1: `I`, `i0`, `i1`, `PathP`, `Path`, `transp`, `hcomp`, systems and partial elements; remove the Ops that no program reaches (part of O14). Port of the frozen leaf-lang snapshot (section 8) | `make check` EXIT 0 with the snapshot counts: examples 10; parse refusals 10; check refusals 24; evals 50; ir 10; wasm 13; differential 773 cases, 0 mismatches; fmt 64 canonical, 5 non-canonical pairs; json 24 fixtures, diagnostics 36 codes (22 with a fixture, 14 with no fixture); diagnostic edit regressions passed; mutants on the `transp` face check, the system agreement check and the `hcomp` base check. Measured 2026-10-26: all counts as above, EXIT 0; M1 (`transp` face), M2 (system agreement), M3 (`hcomp` base) KILLED, 3 of 3 |
+| S2b | kernel part 2: indexed families (the `Step : State → State → U` shape, D3), higher constructors, `REFUSE_CELL` for type-parameter `data` (the CM criterion), `Option` (0-cell `none`, generator `some`), `Trunc` (1-cell `squash`). Port from quorum-lang 8dee55b | one check fixture for each refused shape (cons `List`, `Pair`, a type index, a ghost parameter); `Option` and `Trunc` check; `REFUSE_CELL` mutants |
+| S2c | kernel part 3: CC (`Stream`: observation `head`, field `tail`), cofamily, the CC branch of `REFUSE_CELL`. Port from intent-lang 67445ae | `Stream` checks; CC refusal fixtures; mutants on the CC criterion |
+| S2d | kernel part 4: `Fin n` as the defined Sigma of 2.2; O12 (kit `Sum`, `Unit`), the rest of O14, O15 (ASCII value printer); `docs/STATUS.md` S2 section | `Fin` tests; full gate; mutants on the `Fin` bound |
+| S2e | univalence: `Glue`, `glue`, `unglue`, `ua` (2.2, law L3). Port from zkpolicy-lang 1d263fb. It must land before S6; it can run at any time after S2d | `ua` transport test; mutants on `transp_glue` and `hcomp_glue` |
 | S3 | domain: `ColType`, `Null`, `CState`, `State`, `App`, the steps, `Step`, `Chain`; the `table`, `app` and `protocol` forms (Q9); `REFUSE_STEP_INDEX`, `REFUSE_RENAME_INPLACE` | one test per step index; mutants on each precondition |
 | S4 | the checker: `compat`, `fresh`, `segments`, J4, J5, the codes of 4.4; `examples/rename` GREEN and the drop-early variant refused (the demo); L1, L4, L5, L6 | one test per code with its JSON shape; mutants on each judgement |
 | S5 | JSON report (port of `json.c`), `Fact`, `Guard`, runtime rows | golden reports; mutants on the verdict map |
@@ -460,6 +480,18 @@ on the new checks, docs, close (stage, commit message, next prompt).
 - O10 to O16 come from S1 (`docs/STATUS.md`, S1, open items): the ASCII
   alias policy, `let`, the kit `Sum` and `Unit`, `flagIf`, dead core paths,
   the ASCII value printer, and `nil` for `Chain` in S3.
+- O17 (2026-10-26) evolve-lang does not follow leaf-lang after S2a. S2a
+  ports a frozen leaf-lang working tree that the USER did not review.
+  Later leaf-lang changes (the rest of its S2, a USER review fix of its
+  S2) come to evolve-lang only by a hand port on a USER ask. The S1
+  review fix (`W_NONCANON` spans, `test/diagnostics.c`) is in evolve-lang
+  and not in leaf-lang.
+- O18 (2026-10-26) open items from S2a (`docs/STATUS.md`, S2a): the face
+  tests are conservative where an atom of a meet stays free; two systems
+  convert by structure, in order; a system has at most `FACE_MEETS_MAX`
+  cells; `Eq` is a dropped name (`NAME_UNKNOWN`, hint `Path A x y`). S2a
+  removes the `Prod`, `List`, `unfold` and `filter` Ops (part of O14).
+  S2d closes the rest of O14.
 
 ## 11. Questions for the USER
 

@@ -34,8 +34,14 @@
 == TYPE_ARITY.lang exit 1
 {"code":"TYPE_ARITY","severity":"error","span":{"file":"test/json/TYPE_ARITY.lang","line":1,"col":1,"end_line":2,"end_col":17},"expected":null,"found":null,"fix":null,"retry":true,"message":"natAdd needs 2 arguments, found 1"}
 {"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}
+== TYPE_ENDPOINT.lang exit 1
+{"code":"TYPE_ENDPOINT","severity":"error","span":{"file":"test/json/TYPE_ENDPOINT.lang","line":1,"col":1,"end_line":2,"end_col":10},"expected":null,"found":null,"fix":null,"retry":true,"message":"the path at i1 normalizes to 0, the type needs 1"}
+{"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}
 == TYPE_INFER.lang exit 1
 {"code":"TYPE_INFER","severity":"error","span":{"file":"test/json/TYPE_INFER.lang","line":1,"col":1,"end_line":2,"end_col":30},"expected":null,"found":null,"fix":null,"retry":true,"message":"pack needs a declared type Sigma (x : A) B here"}
+{"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}
+== TYPE_LINE.lang exit 1
+{"code":"TYPE_LINE","severity":"error","span":{"file":"test/json/TYPE_LINE.lang","line":1,"col":1,"end_line":2,"end_col":34},"expected":null,"found":null,"fix":null,"retry":true,"message":"transp needs a line that is constant where r holds, found the line fun i => q i"}
 {"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}
 == TYPE_MISMATCH.lang exit 1
 {"code":"TYPE_MISMATCH","severity":"error","span":{"file":"test/json/TYPE_MISMATCH.lang","line":1,"col":1,"end_line":2,"end_col":10},"expected":null,"found":null,"fix":null,"retry":true,"message":"expected a term of type Bool, found a term of type Nat"}
@@ -43,9 +49,15 @@
 == TYPE_NOT_FUNCTION.lang exit 1
 {"code":"TYPE_NOT_FUNCTION","severity":"error","span":{"file":"test/json/TYPE_NOT_FUNCTION.lang","line":1,"col":1,"end_line":2,"end_col":12},"expected":null,"found":null,"fix":null,"retry":true,"message":"a term of type Nat is applied to an argument"}
 {"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}
+== TYPE_PRETYPE.lang exit 1
+{"code":"TYPE_PRETYPE","severity":"error","span":{"file":"test/json/TYPE_PRETYPE.lang","line":1,"col":1,"end_line":2,"end_col":11},"expected":null,"found":null,"fix":null,"retry":true,"message":"expected a type in a universe, found the pretype I"}
+{"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}
 == TYPE_REFL.lang exit 1
 {"code":"TYPE_REFL","severity":"error","span":{"file":"test/json/TYPE_REFL.lang","line":4,"col":1,"end_line":5,"end_col":13},"expected":null,"found":null,"fix":null,"retry":true,"message":"refl cannot prove the equality: the left side normalizes to 1201, the right side normalizes to 1200"}
 {"parsed":"2 of 2","typed":"1 of 2","affine":"0 of 0","laws":"0 of 0"}
+== TYPE_SYSTEM.lang exit 1
+{"code":"TYPE_SYSTEM","severity":"error","span":{"file":"test/json/TYPE_SYSTEM.lang","line":1,"col":1,"end_line":2,"end_col":26},"expected":null,"found":null,"fix":null,"retry":true,"message":"two branches disagree where the faces meet at i: 1 against 2"}
+{"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}
 == TYPE_UNIVERSE.lang exit 1
 {"code":"TYPE_UNIVERSE","severity":"error","span":{"file":"test/json/TYPE_UNIVERSE.lang","line":1,"col":1,"end_line":2,"end_col":8},"expected":null,"found":null,"fix":null,"retry":true,"message":"Type 64 is above the largest universe Type 1"}
 {"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}

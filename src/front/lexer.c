@@ -39,6 +39,9 @@ static const struct {
   {"\xE2\x86\x92", TOK_ARROW},
   {"\xCE\xBB", TOK_LAMBDA},
   {"\xC3\x97", TOK_TIMES},
+  {"\xE2\x88\xA7", TOK_MEET},
+  {"\xE2\x88\xA8", TOK_JOIN},
+  {"\xE2\x86\xA6", TOK_MAPSTO},
   {"\xE2\x84\x95", TOK_IDENT},
 };
 
@@ -63,6 +66,13 @@ const char *tok_kind_name(TokKind kind) {
     case TOK_KW_DATA: return "'data'";
     case TOK_KW_WHERE: return "'where'";
     case TOK_KW_POSTULATE: return "'postulate'";
+    case TOK_TILDE: return "'~'";
+    case TOK_MEET: return "'∧'";
+    case TOK_JOIN: return "'∨'";
+    case TOK_LBRACK: return "'['";
+    case TOK_RBRACK: return "']'";
+    case TOK_COMMA: return "','";
+    case TOK_MAPSTO: return "'↦'";
     case TOK_KW_TYPE: return "'Type'";
     case TOK_KW_SIGMA: return "'Sigma'";
   }
@@ -245,6 +255,10 @@ static int lex_symbol(Lexer *lx) {
     case '(': kind = TOK_LPAREN; break;
     case ')': kind = TOK_RPAREN; break;
     case '*': kind = TOK_TIMES; break;
+    case '~': kind = TOK_TILDE; break;
+    case '[': kind = TOK_LBRACK; break;
+    case ']': kind = TOK_RBRACK; break;
+    case ',': kind = TOK_COMMA; break;
     case '\\': kind = TOK_LAMBDA; break;
     case ':':
       kind = next == '=' ? TOK_DEFINE : TOK_COLON;

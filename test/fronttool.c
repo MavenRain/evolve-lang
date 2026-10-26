@@ -152,7 +152,7 @@ int main(int argc, char **argv) {
                "data W : Type where\n  makeW : (wrapped : U) → W\n\nbad : Type 0\nbad = W", "TYPE_MISMATCH");
   ok &= domain("data Box (A : Type 1) : Type where\n  box : (unbox : A) → Box A\n\nbad : Type 0\nbad = Box (Type 0)", "TYPE_MISMATCH");
   ok &= domain("data U : Type where\n  makeU : (decode : Type 0) → U\n\ngood : Type 1\ngood = U", NULL);
-  ok &= domain("eta : (p : (n : ℕ) × Eq ℕ n n) → Eq ((n : ℕ) × Eq ℕ n n) (pack (witness p) (payload p)) p\n"
+  ok &= domain("eta : (p : (n : ℕ) × Path ℕ n n) → Path ((n : ℕ) × Path ℕ n n) (pack (witness p) (payload p)) p\n"
                "eta p = refl", NULL);
   if (ok) puts("domain regressions: passed");
   return ok ? 0 : 1;

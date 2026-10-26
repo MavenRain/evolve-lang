@@ -16,3 +16,9 @@ no-type.lang TYPE_INFER
 bare-fun.lang TYPE_INFER
 arity.lang TYPE_ARITY
 not-function.lang TYPE_NOT_FUNCTION
+eq.lang NAME_UNKNOWN
+system-disagree.lang TYPE_SYSTEM
+transp-const.lang TYPE_LINE
+transp-face.lang TYPE_LINE
+transp-name.lang REFUSE_NAME
+hcomp-base.lang TYPE_SYSTEM

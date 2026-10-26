@@ -174,6 +174,7 @@ static int starts_atom(TokKind kind) {
     case TOK_LPAREN:
     case TOK_KW_TYPE:
     case TOK_KW_SIGMA:
+    case TOK_LBRACK:
       return 1;
     case TOK_EOF:
     case TOK_RPAREN:
@@ -189,6 +190,12 @@ static int starts_atom(TokKind kind) {
     case TOK_KW_DATA:
     case TOK_KW_WHERE:
     case TOK_KW_POSTULATE:
+    case TOK_TILDE: /* `p ~ i` is not an application; write `p (~ i)` */
+    case TOK_MEET:
+    case TOK_JOIN:
+    case TOK_RBRACK:
+    case TOK_COMMA:
+    case TOK_MAPSTO:
       return 0;
   }
   return 0;
@@ -318,6 +325,82 @@ static const Term *parse_leaf(Parser *p, TermKind kind) {
   return kind == TERM_VAR && term->name == NULL ? NULL : term;
 }
 
+/* `~ r`, `r ∧ s` and `r ∨ s` are applications of the builtin NAME. No
+   identifier can spell these names. */
+static const Term *make_op(Parser *p, const Token *op, const char *name, const Term *left, const Term *right) {
+  Term *head = make_term(p, TERM_VAR, op->line, op->col);
+  Term *one = head == NULL ? NULL : make_term(p, TERM_APP, right == NULL ? op->line : left->line, right == NULL ? op->col : left->col);
+  if (one == NULL) return NULL;
+  head->name = name;
+  head->nat = 0;
+  head->left = NULL;
+  head->right = NULL;
+  one->left = head;
+  one->right = left;
+  if (right == NULL) return one;
+  Term *two = make_term(p, TERM_APP, left->line, left->col);
+  if (two == NULL) return NULL;
+  two->left = one;
+  two->right = right;
+  return two;
+}
+
+/* `~ r`: the operand is an atom, as in Agda. `~ ~ i` nests, so it counts
+   toward the depth limit. */
+static const Term *parse_neg(Parser *p) {
+  const Token *op = cur(p);
+  bump(p);
+  const Term *arg = enter(p) ? parse_atom(p) : NULL;
+  p->depth--;
+  return arg == NULL ? NULL : make_op(p, op, "~", arg, NULL);
+}
+
+/* The empty system `[]` is the builtin name `[]`. No identifier can spell
+   it. */
+static const Term *make_nil(Parser *p, const Token *tok) {
+  Term *nil = make_term(p, TERM_VAR, tok->line, tok->col);
+  if (nil == NULL) return NULL;
+  nil->name = "[]";
+  nil->nat = 0;
+  nil->left = NULL;
+  nil->right = NULL;
+  return nil;
+}
+
+/* The cells after `[` or `,`: `φ ↦ u`, then `,` and the next cells, or
+   `]`. The cell `φ ↦ u` before REST is APP(APP(APP(VAR "↦", φ), u),
+   REST), so no new term kind is necessary. Each cell counts toward the
+   depth limit. */
+static const Term *parse_cells(Parser *p) {
+  const Term *face = parse_term(p);
+  const Token *op = face == NULL ? NULL : cur(p);
+  const Term *body = op != NULL && expect(p, TOK_MAPSTO, "'↦'") ? parse_term(p) : NULL;
+  const Token *close = body == NULL ? NULL : cur(p);
+  const Term *rest = NULL;
+  if (close != NULL && eat(p, TOK_COMMA)) {
+    rest = enter(p) ? parse_cells(p) : NULL;
+    p->depth--;
+  } else if (close != NULL && expect(p, TOK_RBRACK, "',' or ']'")) {
+    rest = make_nil(p, close);
+  }
+  const Term *cell = rest == NULL ? NULL : make_op(p, op, "↦", face, body);
+  Term *app = cell == NULL ? NULL : make_term(p, TERM_APP, face->line, face->col);
+  if (app == NULL) return NULL;
+  app->left = cell;
+  app->right = rest;
+  return app;
+}
+
+/* `[ φ ↦ u , ψ ↦ v ]` and `[]`. */
+static const Term *parse_system(Parser *p) {
+  const Token *open = cur(p);
+  bump(p);
+  if (eat(p, TOK_RBRACK)) return make_nil(p, open);
+  const Term *cells = enter(p) ? parse_cells(p) : NULL;
+  p->depth--;
+  return cells;
+}
+
 static const Term *parse_atom(Parser *p) {
   const Token *tok = cur(p);
   switch (kind_of(p)) {
@@ -326,6 +409,8 @@ static const Term *parse_atom(Parser *p) {
     case TOK_LPAREN: return parse_paren(p);
     case TOK_KW_TYPE: return parse_universe(p);
     case TOK_KW_SIGMA: return parse_sigma(p);
+    case TOK_TILDE: return parse_neg(p);
+    case TOK_LBRACK: return parse_system(p);
     case TOK_EOF:
     case TOK_RPAREN:
     case TOK_COLON:
@@ -340,6 +425,11 @@ static const Term *parse_atom(Parser *p) {
     case TOK_KW_DATA:
     case TOK_KW_WHERE:
     case TOK_KW_POSTULATE:
+    case TOK_MEET:
+    case TOK_JOIN:
+    case TOK_RBRACK:
+    case TOK_COMMA:
+    case TOK_MAPSTO:
       break;
   }
   fail_at(p, tok, "a term");
@@ -369,6 +459,29 @@ static const Term *make_binary(Parser *p, TermKind kind, const Token *op, const 
   return node;
 }
 
+/* The interval connectives. Level 0 is `∨`, level 1 is `∧` (tighter). */
+static const struct {
+  TokKind kind;
+  const char *name;
+} INFIX[] = {
+  {TOK_JOIN, "∨"},
+  {TOK_MEET, "∧"},
+};
+
+/* `r ∧ s` and `r ∨ s` bind looser than application and tighter than `×`
+   and `→`. Both group to the right, as the value printer does. A chain
+   nests, so its right operand counts toward the depth limit. */
+static const Term *parse_infix(Parser *p, size_t level) {
+  if (level == sizeof INFIX / sizeof INFIX[0]) return parse_app(p);
+  const Term *head = parse_infix(p, level + 1u);
+  if (head == NULL || !at(p, INFIX[level].kind)) return head;
+  const Token *op = cur(p);
+  bump(p);
+  const Term *rest = enter(p) ? parse_infix(p, level) : NULL;
+  p->depth--;
+  return rest == NULL ? NULL : make_op(p, op, INFIX[level].name, head, rest);
+}
+
 static const Term *parse_binder_type(Parser *p) {
   Binders b;
   if (!parse_group(p, &b)) return NULL;
@@ -384,7 +497,7 @@ static const Term *parse_binder_type(Parser *p) {
 
 static const Term *parse_prod_body(Parser *p) {
   if (at_binder_group(p)) return parse_binder_type(p);
-  const Term *head = parse_app(p);
+  const Term *head = parse_infix(p, 0u);
   if (head == NULL || !at(p, TOK_TIMES)) return head;
   const Token *op = cur(p);
   bump(p);
@@ -627,6 +740,13 @@ static int parse_decl_body(Parser *p, Decl *d) {
     case TOK_KW_WHERE:
     case TOK_KW_TYPE:
     case TOK_KW_SIGMA:
+    case TOK_TILDE:
+    case TOK_MEET:
+    case TOK_JOIN:
+    case TOK_LBRACK:
+    case TOK_RBRACK:
+    case TOK_COMMA:
+    case TOK_MAPSTO:
       break;
   }
   return fail_at(p, cur(p), "a signature, 'rec', 'postulate' or 'data'");

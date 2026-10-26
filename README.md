@@ -9,14 +9,16 @@ application version without a column that the version needs. The host is
 TinyCC. The planned targets are PostgreSQL SQL stage files, a JSON
 compatibility report and a Wasm compatibility oracle module.
 
-## Status (S1)
+## Status (S2a)
 
 S1 gives the evolve-lang surface on the tcc-wasm kit of lang-template: the
 Agda-like syntax with ASCII aliases (`SPEC.md` section 2), `langc fmt`,
-`langc check --json` and the renamed core names. The tables, apps,
-protocols and the compatibility checker are not built yet. There is no SQL
-writer yet. `make check` passes. `docs/PLAN.md` section 9 gives the slices,
-and `docs/STATUS.md` gives the state.
+`langc check --json` and the renamed core names. S2a adds the first part
+of the cubical kernel: the interval `I`, `PathP` and `Path`, `transp`,
+`hcomp` and systems. The tables, apps, protocols and the compatibility
+checker are not built yet. There is no SQL writer yet. `make check`
+passes. `docs/PLAN.md` section 9 gives the slices, and `docs/STATUS.md`
+gives the state.
 
 evolve-lang does not promise zero downtime. The checker proves
 compatibility facts about the declared model only. Lock wait time, traffic,

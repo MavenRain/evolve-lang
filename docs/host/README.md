@@ -60,10 +60,12 @@ The parser also reads the ASCII aliases of `SPEC.md` section 2.3: `->`,
 `\`, `fun x => t`, `*`, `Sigma (x : A) B` and `Nat`. There is no text type.
 
 Core names (`BUILTINS` in `src/front/check.c`): types `ℕ` (core name
-`Nat`), `Bool Unit Sum Option Eq`, values `unit true false inl inr either
-none some option pack witness payload pure map bind fold refl symm trans
-transport cong`, Nat operations `natAdd natSub natMul natEq natLe`, and the
-Bool eliminator `flagIf b yes no`. `Type 0 : Type 1` is the universe chain.
+`Nat`), `Bool Unit Sum Option PathP Path`, the interval `I i0 i1 ~ ∧ ∨`,
+`Partial` and systems `[ φ ↦ u , ... ]`, the Kan operations `transp
+hcomp`, values `unit true false inl inr either none some option pack
+witness payload pure map bind fold refl symm trans transport cong`, Nat
+operations `natAdd natSub natMul natEq natLe`, and the Bool eliminator
+`flagIf b yes no`. `Type 0 : Type 1` is the universe chain.
 `(x : A) × B` is a dependent pair and `A × B` is a pair. `pack a b` makes
 a pair, and `witness` and `payload` give its parts. `formers/tcc-wasm.md`
 gives the status of each former.
@@ -125,6 +127,10 @@ programs with a HOST-LIMIT code (see `docs/host/CAPABILITY.md`):
 - `REFUSE_RUNTIME_CLOSURE`: a function value must exist at run time.
 - `REFUSE_RUNTIME_TREE`: a fold walks a tree that exists only at run time.
 
+The lowering also refuses `REFUSE_RUNTIME_PATH` (not a HOST-LIMIT code):
+an interval point or a path value must exist at run time, for example in
+the state of a fold. A path is a proof, so it has no run-time form.
+
 ## Lazy traps
 
 A trap is lazy. It stops a computation only when the computation needs
@@ -172,22 +178,24 @@ how to replace the sample domain.
 | Line | What the gate does |
 |---|---|
 | `examples: 10 checked, 0 failed` | `langc check` accepts each `examples/*.lang` file |
-| `parse refusals: 9 checked` | each `test/parse` file fails with the code in `test/parse/expect.txt`; one file has 1100 nested parentheses |
-| `check refusals: 18 checked` | each `test/check` mutant fails with the code in `test/check/expect.txt`; the `TYPE_REFL` message shows both normal forms |
-| `evals: 30 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
+| `parse refusals: 10 checked` | each `test/parse` file fails with the code in `test/parse/expect.txt`; one file has 1100 nested parentheses |
+| `check refusals: 24 checked` | each `test/check` mutant fails with the code in `test/check/expect.txt`; the `TYPE_REFL` message shows both normal forms |
+| `evals: 50 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
 | `ir: 10 lowered` | `langc ir` lowers each example, with one `func` for each `abi` line |
 | `wasm: 13 modules valid` | `langc build` writes a module for each example and for `test/ir/spine.lang`, `test/ir/lazy.lang` and `test/ir/proof-trap.lang`; `wasm-validate` and `wasm-objdump -x` accept it |
-| `differential: 772 cases, 0 mismatches` | node runs each entry on the grid of `test/grid.awk`; each result is equal to the `langc eval` result, and a trap is equal to a trap |
-| `fmt: 50 canonical, 3 non-canonical pairs` | `langc fmt` keeps each committed `.lang` file and each canonical `test/fmt` file the same; it is idempotent, and its output parses to the same terms; each non-canonical `test/fmt` input gives its expected canonical text |
-| `json: 20 fixtures; diagnostics: 31 codes, 18 with a fixture, 13 with no fixture` | each `test/json` fixture gives the JSON shape of its code; each fixture code is in `docs/DIAGNOSTICS.md` |
+| `differential: 773 cases, 0 mismatches` | node runs each entry on the grid of `test/grid.awk`; each result is equal to the `langc eval` result, and a trap is equal to a trap |
+| `fmt: 64 canonical, 5 non-canonical pairs` | `langc fmt` keeps each committed `.lang` file and each canonical `test/fmt` file the same; it is idempotent, and its output parses to the same terms; each non-canonical `test/fmt` input gives its expected canonical text |
+| `json: 24 fixtures; diagnostics: 36 codes, 22 with a fixture, 14 with no fixture` | each `test/json` fixture gives the JSON shape of its code; each fixture code is in `docs/DIAGNOSTICS.md` |
 | `gate: 0 failures` | the sum of all failures |
 
 The gate also checks the usage and IO exit codes, five `eval` refusals,
 `test/ir/closure.lang` (`REFUSE_RUNTIME_CLOSURE`), `test/ir/tree.lang`
-(`REFUSE_RUNTIME_TREE`), the 5 cases of `test/ir/spine.lang`,
+(`REFUSE_RUNTIME_TREE`), `test/ir/path.lang` (`REFUSE_RUNTIME_PATH`), the
+5 cases of `test/ir/spine.lang`,
 `pick 2 4 9` = `trap` on Wasm, and the absence of em-dashes and en-dashes.
 Then `make check` runs `test/review.sh` and the domain regressions of
-`build/fronttool`, plus the diagnostic edit regressions of `build/diagnostics`.
+`build/fronttool`, the diagnostic edit regressions of `build/diagnostics`,
+and the cubical checking and normalized-source round trips of `build/cubical`.
 
 ## Known limits
 

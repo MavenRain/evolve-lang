@@ -6,12 +6,17 @@
 #define SYM_LAMBDA "\xCE\xBB"     /* λ */
 #define SYM_TIMES "\xC3\x97"      /* × */
 #define SYM_NAT "\xE2\x84\x95"    /* ℕ */
+#define SYM_MEET "\xE2\x88\xA7"   /* ∧ */
+#define SYM_JOIN "\xE2\x88\xA8"   /* ∨ */
+#define SYM_MAPSTO "\xE2\x86\xA6" /* ↦ */
 
 /* Precedence levels. A term below the level of its slot gets parentheses. */
 enum {
   LEVEL_BINDER, /* λ, Pi */
   LEVEL_SIGMA,
-  LEVEL_APP,    /* application, Type n */
+  LEVEL_JOIN,   /* r ∨ s */
+  LEVEL_MEET,   /* r ∧ s */
+  LEVEL_APP,    /* application, Type n, ~ r */
   LEVEL_ATOM
 };
 
@@ -58,12 +63,34 @@ static void put_name(FmtText *out, const char *name) {
   put_str(out, strcmp(name, "Nat") == 0 ? SYM_NAT : name);
 }
 
+/* `r ∧ s` parses to `∧ r s` and `r ∨ s` to `∨ r s`. The result is the
+   connective, or NULL for any other term. */
+static const char *infix_op(const Term *t) {
+  const Term *head = t->kind == TERM_APP && t->left->kind == TERM_APP ? t->left->left : NULL;
+  int infix = head != NULL && head->kind == TERM_VAR && (strcmp(head->name, SYM_MEET) == 0 || strcmp(head->name, SYM_JOIN) == 0);
+  return infix ? head->name : NULL;
+}
+
+/* 1 when T is a system cell `φ ↦ u` applied to the other cells. */
+static int is_system_cell(const Term *t) {
+  return t->kind == TERM_APP && t->left->kind == TERM_APP && t->left->left->kind == TERM_APP
+         && t->left->left->left->kind == TERM_VAR && strcmp(t->left->left->left->name, SYM_MAPSTO) == 0;
+}
+
+static int app_level(const Term *t) {
+  const char *op = infix_op(t);
+  if (is_system_cell(t)) return LEVEL_ATOM;
+  if (op == NULL) return LEVEL_APP;
+  return strcmp(op, SYM_MEET) == 0 ? LEVEL_MEET : LEVEL_JOIN;
+}
+
 static int term_level(const Term *t) {
   switch (t->kind) {
     case TERM_VAR:
     case TERM_NAT:
       return LEVEL_ATOM;
     case TERM_APP:
+      return app_level(t);
     case TERM_UNIV:
       return LEVEL_APP;
     case TERM_SIGMA:
@@ -106,6 +133,27 @@ static void put_binary(FmtText *out, const Term *t, const char *op, int left_lev
   put_term(out, t->right, right_level);
 }
 
+/* `r ∧ s ∧ t` is `r ∧ (s ∧ t)`: the left operand is one level tighter. */
+static void put_infix(FmtText *out, const Term *t, const char *op) {
+  int level = term_level(t);
+  put_term(out, t->left->right, level + 1);
+  put_str(out, " ");
+  put_str(out, op);
+  put_str(out, " ");
+  put_term(out, t->right, level);
+}
+
+/* `[ φ ↦ u , ψ ↦ v ]`: the cells of a `↦` chain, which ends at `[]`. */
+static void put_system(FmtText *out, const Term *t) {
+  put_str(out, "[ ");
+  for (; is_system_cell(t); t = t->right) {
+    put_term(out, t->left->left->right, LEVEL_BINDER);
+    put_str(out, " " SYM_MAPSTO " ");
+    put_term(out, t->left->right, LEVEL_BINDER);
+    put_str(out, is_system_cell(t->right) ? " , " : " ]");
+  }
+}
+
 static void put_term(FmtText *out, const Term *t, int level) {
   int paren = term_level(t) < level;
   if (paren) put_str(out, "(");
@@ -121,6 +169,14 @@ static void put_term(FmtText *out, const Term *t, int level) {
       put_nat(out, t->nat);
       break;
     case TERM_APP:
+      if (is_system_cell(t)) {
+        put_system(out, t);
+        break;
+      }
+      if (infix_op(t) != NULL) {
+        put_infix(out, t, infix_op(t));
+        break;
+      }
       put_term(out, t->left, LEVEL_APP);
       put_str(out, " ");
       put_term(out, t->right, LEVEL_ATOM);
@@ -132,7 +188,7 @@ static void put_term(FmtText *out, const Term *t, int level) {
       put_binary(out, t, " " SYM_ARROW " ", LEVEL_SIGMA, LEVEL_BINDER);
       break;
     case TERM_SIGMA:
-      put_binary(out, t, " " SYM_TIMES " ", LEVEL_APP, LEVEL_SIGMA);
+      put_binary(out, t, " " SYM_TIMES " ", LEVEL_JOIN, LEVEL_SIGMA);
       break;
   }
   if (paren) put_str(out, ")");

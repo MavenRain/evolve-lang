@@ -7,6 +7,7 @@ FRONT = src/front/base.c src/front/lexer.c src/front/parser.c src/front/fmt.c sr
 TARGET = src/wasm.c
 SRC = src/main.c $(FRONT) $(TARGET)
 FRONT_TOOL = test/fronttool.c $(filter-out src/front/front.c src/front/lower.c,$(FRONT))
+CUBICAL_TOOL = test/cubical.c $(filter-out src/front/lower.c,$(FRONT))
 HEADERS = $(wildcard src/*.h src/front/*.h)
 
 .PHONY: build check check-clang clean
@@ -27,16 +28,21 @@ build/fronttool: $(FRONT_TOOL) $(HEADERS)
 build/diagnostics: test/diagnostics.c $(SRC) $(HEADERS) build/domain.c
 	$(TCC) $(CFLAGS) -o build/diagnostics test/diagnostics.c $(filter-out src/main.c,$(SRC)) build/domain.c
 
+build/cubical: $(CUBICAL_TOOL) $(HEADERS) build/domain.c
+	$(TCC) $(CFLAGS) -o build/cubical $(CUBICAL_TOOL) build/domain.c
+
 check-clang: build/domain.c
 	$(CC) $(CLANG_FLAGS) $(SRC) build/domain.c
 	$(CC) $(CLANG_FLAGS) $(FRONT_TOOL)
 	$(CC) $(CLANG_FLAGS) test/diagnostics.c $(filter-out src/main.c,$(SRC)) build/domain.c
+	$(CC) $(CLANG_FLAGS) $(CUBICAL_TOOL) build/domain.c
 
-check: build/langc build/fronttool build/diagnostics check-clang
+check: build/langc build/fronttool build/diagnostics build/cubical check-clang
 	sh test/gate.sh
 	sh test/review.sh
 	build/fronttool
 	build/diagnostics
+	build/cubical
 
 clean:
 	rm -rf build
