@@ -35,8 +35,7 @@ USER rulings (2026-10-25, the request and AskUserQuestion; the words are in
   When a runner slice lands, it links libpq (O1).
 - R5 agent adoption: the six bullets of the pasted list (section 7).
 
-Claude's readings (NOT ruled; each has a Q item in section 11, where (a) is
-RECOMMENDED):
+Readings RULED (a) by the USER on 2026-10-25 (section 11):
 
 - Kit: the tcc-wasm seed (it has the Wasm writer and the differential
   gate), plus a port of the JSON writer of `hosts/tcc-json` for the report
@@ -413,8 +412,8 @@ EXTRA.
 | intent-lang | 67445ae | `REFUSE_CELL`, cofamily; PLAN 2.2 |
 | resolve-lang | 510c137 | `REFUSE_CELL` (second implementation) |
 | mandate-lang | 17d50a4 | the free cell monad of operations (PLAN 4.6), for `Guard` |
-| agent-lang | 06854bf | JSON diagnostics |
-| dil-lang | 9e57528 | JSON diagnostics |
+| agent-lang | 06854bf | no JSON diagnostics (leaf-lang S1 read it; `json.c` writes the Json target) |
+| dil-lang | 9e57528 | no JSON diagnostics (leaf-lang S1 read it; `--json` is a build output path) |
 
 No *-lang repository has an MCP server in C yet (O3).
 
@@ -426,7 +425,7 @@ on the new checks, docs, close (stage, commit message, next prompt).
 | Slice | Scope | Gate and mutants |
 |---|---|---|
 | S0 | kit seed, `design/DESIGN.md`, this plan, README, `AGENTS.md` | `make check` EXIT 0: examples 10 checked, 0 failed; parse refusals 9; check refusals 19; evals 32; ir 10 lowered; wasm 13 modules valid; differential 813 cases, 0 mismatches; gate 0 failures; review and domain regressions passed |
-| S1 | surface: Agda-like Unicode (Q7), `langc fmt`, `W_NONCANON`, `check --json` with progress counts; drop the refused kit names (port from leaf-lang e3e2338) | fmt round trip and idempotence; JSON fixtures; mutants on fmt and JSON |
+| S1 | surface: Agda-like Unicode (Q7), `langc fmt`, `W_NONCANON`, `check --json` with progress counts; drop the refused kit names (port from leaf-lang e3e2338) | `make check` EXIT 0: examples 10 checked, 0 failed; parse refusals 9; check refusals 18; evals 30; ir 10 lowered; wasm 13 modules valid; differential 772 cases, 0 mismatches; fmt 50 canonical, 3 non-canonical pairs (round trip and idempotence); json 20 fixtures, diagnostics 31 codes (18 with a fixture, 13 with no fixture); gate 0 failures; review and domain regressions passed; mutants M1 to M6 killed (docs/STATUS.md, S1) |
 | S2 | kernel port: Path, Sigma, Pi, U, `I`, `transp`, `hcomp`, `REFUSE_CELL`, cofamily, indexed families, `Fin`, `Option`, `Trunc`, `Stream` | port tests; `REFUSE_CELL` mutants |
 | S3 | domain: `ColType`, `Null`, `CState`, `State`, `App`, the steps, `Step`, `Chain`; the `table`, `app` and `protocol` forms (Q9); `REFUSE_STEP_INDEX`, `REFUSE_RENAME_INPLACE` | one test per step index; mutants on each precondition |
 | S4 | the checker: `compat`, `fresh`, `segments`, J4, J5, the codes of 4.4; `examples/rename` GREEN and the drop-early variant refused (the demo); L1, L4, L5, L6 | one test per code with its JSON shape; mutants on each judgement |
@@ -447,7 +446,7 @@ on the new checks, docs, close (stage, commit message, next prompt).
   the MCP protocol revision it implements.
 - O4 the PG 18 form `NOT NULL ... NOT VALID`. The 18.6 ALTER TABLE page now
   lists not-null constraints for NOT VALID; the docs bug of 18.4
-  (`design/DESIGN.md` section 3) looks fixed. A version-gated form, after Q5.
+  (`design/DESIGN.md` section 3) looks fixed. A version-gated form (Q5 RULED (a)).
 - O5 lock queue behavior (a waiting ACCESS EXCLUSIVE request blocks later
   readers) is not stated in `explicit-locking.html`. Confirm from another
   PostgreSQL source before a doc cites it.
@@ -456,50 +455,53 @@ on the new checks, docs, close (stage, commit message, next prompt).
 - O7 Prisma 8 (renamed from Prisma Next) GA was expected in October 2026.
   Check its status before the README compares with it (S8).
 - O8 the kit sample domain (`domain/domain.lang`) and its examples stay
-  until S1 and S3 replace them.
+  until S3 replaces them. S1 moved them to the S1 surface.
 - O9 column types beyond `text` and `bigint` on a USER ask only (Q13).
+- O10 to O16 come from S1 (`docs/STATUS.md`, S1, open items): the ASCII
+  alias policy, `let`, the kit `Sum` and `Unit`, `flagIf`, dead core paths,
+  the ASCII value printer, and `nil` for `Chain` in S3.
 
 ## 11. Questions for the USER
 
-Each item has options. (a) is RECOMMENDED. No item is ruled yet; until a
-ruling, (a) is the default.
+Each item has options. Marks (2026-10-25): RULED (letter) is a USER ruling.
+USER ruling 2026-10-25, verbatim: "Rule a for Q1-Q14".
 
-- Q1 R1 reading. (a) the intent-lang ruled reading (2.1): ambient Pi,
+- Q1 R1 reading. RULED (a). (a) the intent-lang ruled reading (2.1): ambient Pi,
   Sigma, Path, U, Glue are not limited; declared type constructors are
   only CM and CC; the cell criterion is syntactic; cons is refused;
   indexed base families such as `Step` are R2 base types. (b) the same
   without Glue and `ua`.
-- Q2 kit. (a) tcc-wasm seed, report writer ported from tcc-json. (b)
+- Q2 kit. RULED (a). (a) tcc-wasm seed, report writer ported from tcc-json. (b)
   tcc-json seed and a port of the Wasm writer.
-- Q3 Wasm target. (a) a compatibility oracle per protocol, emitted by the
+- Q3 Wasm target. RULED (a). (a) a compatibility oracle per protocol, emitted by the
   Wasm writer of `langc` (5.3); it is not the type checker. (b) build
   `langc` with clang for wasm32-wasi (this breaks R3). (c) drop the Wasm
   target from v1.
-- Q4 runtime facts with no runner. (a) in the emitted SQL: the ledger, the
+- Q4 runtime facts with no runner. RULED (a). (a) in the emitted SQL: the ledger, the
   backfill procedure with a commit per batch, guard `DO` blocks and the
   version registry. (b) report rows only; an operator does the checks.
-- Q5 PostgreSQL floor. (a) PG 15 and later, with the CHECK NOT VALID,
+- Q5 PostgreSQL floor. RULED (a). (a) PG 15 and later, with the CHECK NOT VALID,
   VALIDATE, SET NOT NULL path, and PG 18 `NOT NULL NOT VALID` as a
   version-gated form. (b) PG 18 only. (c) PG 14 and later. EOL dates
   (postgresql.org, 2026-10-25): 14 on 2026-11-12, 15 on 2027-11-11, 16 on
   2028-11-09, 17 on 2029-11-08, 18 on 2030-11-14.
-- Q6 proofs. (a) guest language only. (b) also a Lean export.
-- Q7 surface. (a) the Agda-like Unicode surface of quorum-lang (Q13) and
+- Q6 proofs. RULED (a). (a) guest language only. (b) also a Lean export.
+- Q7 surface. RULED (a). (a) the Agda-like Unicode surface of quorum-lang (Q13) and
   leaf-lang (Q14). (b) ASCII keywords. Unicode symbols can cost more
   tokens; S9 measures it.
-- Q8 demo. (a) `examples/rename` (4.6) GREEN; the variant with no `retire
+- Q8 demo. RULED (a). (a) `examples/rename` (4.6) GREEN; the variant with no `retire
   v1` gets `REFUSE_DROP_REQUIRED` with "retire v1 before stage 5". (b) a
   different first demo.
-- Q9 declaration forms. (a) dedicated forms `table`, `app` and `protocol`
+- Q9 declaration forms. RULED (a). (a) dedicated forms `table`, `app` and `protocol`
   that elaborate to guest terms. (b) plain guest definitions over the
   domain types only.
-- Q10 rollout model. (a) barrier segments (4.3). (b) an explicit wave
+- Q10 rollout model. RULED (a). (a) barrier segments (4.3). (b) an explicit wave
   schedule: time and wave give a stage.
-- Q11 `CREATE INDEX CONCURRENTLY`. (a) admit it as a step (the ruled option
+- Q11 `CREATE INDEX CONCURRENTLY`. RULED (a). (a) admit it as a step (the ruled option
   text names it; D8). (b) refuse it until a description sentence needs it.
-- Q12 tokenizer for the baseline. (a) a fixed offline proxy, as leaf-lang
+- Q12 tokenizer for the baseline. RULED (a). (a) a fixed offline proxy, as leaf-lang
   Q13. (b) a named BPE tokenizer through a script.
-- Q13 column types. (a) `text` and `bigint` only. (b) also `integer`,
+- Q13 column types. RULED (a). (a) `text` and `bigint` only. (b) also `integer`,
   `boolean`, `timestamptz` and `uuid`.
-- Q14 `lock_timeout` per stage. (a) 2 s by default, a protocol can set it.
+- Q14 `lock_timeout` per stage. RULED (a). (a) 2 s by default, a protocol can set it.
   (b) 5 s. (c) no default; each protocol must set it.

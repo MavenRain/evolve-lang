@@ -7,16 +7,28 @@ versions still run, for multi-tenant rollouts with tenants at mixed stages,
 and for resumable backfills. Do not use it for general SQL, data analysis
 or other SQL dialects.
 
-## Status (S0)
+## Status (S1)
 
-Only the kit seed exists. The evolve-lang surface, `langc check --json`,
-`langc fmt`, `langc mcp`, the SQL writer, `SKILL.md` and the graded
-examples are planned (`docs/PLAN.md` section 7 and section 9). Do not cite
-them as built.
+The evolve-lang surface (`SPEC.md` section 2), `langc fmt` and
+`langc check --json` are built. The domain (tables, apps, protocols), the
+checker, `langc mcp`, the SQL writer, `SKILL.md` and the graded examples
+are planned (`docs/PLAN.md` section 7 and section 9). Do not cite them as
+built.
 
 ## Commands that work now
 
 - `make check`: build `build/langc` with tcc and run the gate.
+- `build/langc check [--json] PROG`: check a program. `--json` gives the
+  diagnostics as JSON with a `fix` hint and progress counts
+  (`docs/DIAGNOSTICS.md`).
+- `build/langc fmt PROG`: print the canonical text (`SPEC.md` section 2.6).
+
+A definition is a signature line and a clause line (`SPEC.md` section 2.1):
+
+```
+twice : (f : ℕ → ℕ) → ℕ → ℕ
+twice f x = f (f x)
+```
 
 ## Rules for a change
 
