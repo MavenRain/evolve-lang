@@ -1916,6 +1916,121 @@ static int cell_header(Checker *c, const Decl *d, const FamilyInfo *f) {
   return 1;
 }
 
+/* The fields of a cocell signature (rule R1): the one observation `A`, a
+   field `D A`, or a labelled field `E → D A` with E closed. */
+typedef enum {
+  COCELL_OBSERVATION,
+  COCELL_COFIELD,
+  COCELL_LABELLED
+} CocellField;
+
+/* T is the application of the variable of index F to the variable of
+   index A. */
+static int cocell_app(const Core *t, uint32_t f, uint32_t a) {
+  return t != NULL && t->kind == CORE_APP && t->a->kind == CORE_VAR && t->a->index == f && t->b->kind == CORE_VAR && t->b->index == a;
+}
+
+/* The kind of the field J with the normal type T, in the context D, A,
+   then the J earlier fields: A is the variable J and D is the variable
+   J + 1. A labelled field is an arrow written in the field. */
+static int cocell_kind(const Field *field, const Core *t, uint32_t j, CocellField *out) {
+  if (t->kind == CORE_VAR && t->index == j) {
+    *out = COCELL_OBSERVATION;
+    return 1;
+  }
+  if (cocell_app(t, j + 1u, j)) {
+    *out = COCELL_COFIELD;
+    return 1;
+  }
+  if (field->type->kind == TERM_PI && t->kind == CORE_PI && cell_closed(t->a, 0u) && cocell_app(t->b, j + 2u, j + 1u)) {
+    *out = COCELL_LABELLED;
+    return 1;
+  }
+  return 0;
+}
+
+/* The shape check of `codata D (A : Type n) : Type where` and its one
+   clause `c : fields → D A` (rule R1): one type parameter, no index, one
+   clause that is not a path constructor, and each field a CocellField,
+   with exactly one observation. The fields are checked with
+   D : Type n → Type n and A as locals. The universe of the parameter goes
+   to *N, the field kinds to KINDS and the universe of each label type to
+   LABELS, with its closed normal form in LABEL_TYPES. */
+static int cocell_shape(Checker *c, const Decl *d, uint64_t *n, CocellField *kinds, uint64_t *labels, const Core **label_types) {
+  Machine *m = c->m;
+  const Ctor *ctor = d->ctors;
+  Term *arrow = arena_alloc(m->arena, sizeof *arrow);
+  const Core *pt, *pn, *dt;
+  uint64_t level = 0;
+  uint32_t j, observations = 0;
+  if (arrow == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  if (d->param_count != 1u)
+    return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: it has %u parameters; a cocell signature has one type parameter (rule R1)", d->name, (unsigned)d->param_count);
+  if (d->index_count != 0u)
+    return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: it has an index (rule R1)", d->name);
+  if (d->ctor_count != 1u || ctor->result != NULL)
+    return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: it must have one clause, and the clause is not a path constructor (rule R1)", d->name);
+  pt = check_type(c, d->params[0].type, &level);
+  if (pt == NULL)
+    return 0;
+  pn = quote_value(m, c->level, here(c, pt));
+  if (pn == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  if (pn->kind != CORE_UNIV)
+    return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: the parameter %s is not a universe; a cocell signature has one type parameter (rule R1)", d->name, d->params[0].name);
+  *n = pn->nat;
+  memset(arrow, 0, sizeof *arrow);
+  arrow->kind = TERM_PI;
+  arrow->line = d->line;
+  arrow->col = d->col;
+  arrow->left = d->params[0].type;
+  arrow->right = d->params[0].type;
+  dt = check_type(c, arrow, &level);
+  if (dt == NULL || !push(c, d->name, here(c, dt)) || !push(c, d->params[0].name, here(c, pt)))
+    return 0;
+  for (j = 0; j < ctor->field_count; j++) {
+    const Field *field = &ctor->fields[j];
+    const Core *k = check_type(c, field->type, &level);
+    const Core *t = k == NULL ? NULL : quote_value(m, c->level, here(c, k));
+    if (k == NULL)
+      return 0;
+    if (t == NULL)
+      return FAIL(c, "OOM", "out of memory");
+    if (!cocell_kind(field, t, j, &kinds[j]))
+      return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: the field %s must be the observation %s, a field %s %s or a labelled field E → %s %s with E closed (rule R1)",
+                  d->name, field->name, d->params[0].name, d->name, d->params[0].name, d->name, d->params[0].name);
+    labels[j] = 0;
+    if (kinds[j] == COCELL_LABELLED && check_type(c, field->type->left, &labels[j]) == NULL)
+      return 0;
+    if (labels[j] > *n)
+      return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: the label type of %s is in Type %llu, above Type %llu of %s (rule R1)",
+                  d->name, field->name, (unsigned long long)labels[j], (unsigned long long)*n, d->params[0].name);
+    /* cocell_kind proved this domain closed. Keep its checked normal form
+       and do not resolve the source again in a different scope. */
+    label_types[j] = kinds[j] == COCELL_LABELLED ? t->a : NULL;
+    observations += kinds[j] == COCELL_OBSERVATION;
+    if (!push(c, field->name, here(c, k)))
+      return 0;
+  }
+  if (observations != 1u)
+    return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: it has %u observations; a cocell signature has exactly one (rule R1)", d->name, (unsigned)observations);
+  for (j = 0; j < ctor->field_count; j++) {
+    const char *name = ctor->fields[j].name;
+    uint32_t earlier;
+    if (strcmp(name, d->name) == 0 || strcmp(name, ctor->name) == 0)
+      return FAIL(c, "REFUSE_NAME", "%s is the codata type name or the clause name (rule R4)", name);
+    for (earlier = 0; earlier < j; earlier++)
+      if (strcmp(name, ctor->fields[earlier].name) == 0)
+        return FAIL(c, "REFUSE_NAME", "%s is already a field of this clause (rule R4)", name);
+    if (!name_free(c, name))
+      return 0;
+  }
+  if (strcmp(ctor->name, d->name) == 0)
+    return FAIL(c, "REFUSE_NAME", "%s is the codata type name (rule R4)", ctor->name);
+  return name_free(c, ctor->name);
+}
+
 /* An index type that ends in a universe is a type index. A cell signature
    binds its type arguments as uniform parameters (rule R1). */
 static int type_index(Checker *c, const FamilyInfo *f) {
@@ -2200,6 +2315,366 @@ static int program_data(const Decl *d) {
   return 1;
 }
 
+/* The declarations that a codata D (A : Type n) with the clause c gives
+   (S2c U3). They are AST terms at the position of D, checked as domain
+   declarations, so family_class gives D_pos FAMILY_BASE:
+   - D_f_E : Type k, the label type of each labelled field f;
+   - data D_pos : Type where D_here, D_f (rest : D_pos) for a field D A,
+     D_f (label : D_f_E) (rest : D_pos) for a labelled field;
+   - D : Type n → Type n, D A = (p : D_pos) → A;
+   - the destructor f of each field;
+   - D_walk, the fold over a position that applies the steps;
+   - the corecursor c : (A S : Type n) → (S → A) → steps → S → D A.
+   The ctor field names have a `.`, so a program cannot name them. */
+typedef struct {
+  Checker *c;
+  const Decl *d;
+  const CocellField *kinds;
+  uint32_t count;
+  uint64_t n;
+  const char *pos, *here, *walk;
+  const char **ctor;  /* D_f, NULL for the observation */
+  const char **etype; /* D_f_E, NULL for a field with no label */
+  const char **step;  /* t_f, NULL for the observation */
+  const char *A, *S, *o, *seed, *p, *s, *ih, *e, *x;
+} Cogen;
+
+static Term *cg_node(const Cogen *g, TermKind kind, const char *name, const Term *left, const Term *right) {
+  Term *t = arena_alloc(g->c->m->arena, sizeof *t);
+  if (t == NULL)
+    return NULL;
+  memset(t, 0, sizeof *t);
+  t->kind = kind;
+  t->line = g->d->line;
+  t->col = g->d->col;
+  t->name = name;
+  t->left = left;
+  t->right = right;
+  return t;
+}
+
+static const Term *cg_var(const Cogen *g, const char *name) {
+  return name == NULL ? NULL : cg_node(g, TERM_VAR, name, NULL, NULL);
+}
+
+static const Term *cg_app(const Cogen *g, const Term *f, const Term *a) {
+  return f == NULL || a == NULL ? NULL : cg_node(g, TERM_APP, NULL, f, a);
+}
+
+static const Term *cg_lam(const Cogen *g, const char *x, const Term *type, const Term *body) {
+  return x == NULL || type == NULL || body == NULL ? NULL : cg_node(g, TERM_LAM, x, type, body);
+}
+
+/* X is NULL for an arrow. */
+static const Term *cg_pi(const Cogen *g, const char *x, const Term *dom, const Term *cod) {
+  return dom == NULL || cod == NULL ? NULL : cg_node(g, TERM_PI, x, dom, cod);
+}
+
+static const Term *cg_univ(const Cogen *g, uint64_t n) {
+  Term *t = cg_node(g, TERM_UNIV, NULL, NULL, NULL);
+  if (t != NULL)
+    t->nat = n;
+  return t;
+}
+
+static const char *cg_join(const Cogen *g, const char *x, const char *y) {
+  size_t lx, ly;
+  char *s;
+  if (x == NULL || y == NULL)
+    return NULL;
+  lx = strlen(x);
+  ly = strlen(y);
+  s = arena_alloc(g->c->m->arena, lx + ly + 1u);
+  if (s == NULL)
+    return NULL;
+  memcpy(s, x, lx);
+  memcpy(s + lx, y, ly);
+  s[lx + ly] = '\0';
+  return s;
+}
+
+/* The binder BASE, primes, SUFFIX that is not D and does not start with
+   D_, so it does not hide a generated global. */
+static const char *cg_binder(const Cogen *g, const char *base, const char *suffix) {
+  size_t ld = strlen(g->d->name);
+  const char *b = cg_join(g, base, suffix);
+  while (b != NULL && (strcmp(b, g->d->name) == 0 || (strncmp(b, g->d->name, ld) == 0 && b[ld] == '_'))) {
+    base = cg_join(g, base, "'");
+    b = cg_join(g, base, suffix);
+  }
+  return b;
+}
+
+static int cg_names(Cogen *g) {
+  const Ctor *ctor = g->d->ctors;
+  const char *d = g->d->name;
+  Arena *a = g->c->m->arena;
+  uint32_t j;
+  g->ctor = arena_alloc(a, (g->count + 1u) * sizeof *g->ctor);
+  g->etype = arena_alloc(a, (g->count + 1u) * sizeof *g->etype);
+  g->step = arena_alloc(a, (g->count + 1u) * sizeof *g->step);
+  if (g->ctor == NULL || g->etype == NULL || g->step == NULL)
+    return 0;
+  for (j = 0; j < g->count; j++) {
+    int cofield = g->kinds[j] != COCELL_OBSERVATION;
+    g->ctor[j] = cofield ? cg_join(g, cg_join(g, d, "_"), ctor->fields[j].name) : NULL;
+    g->etype[j] = g->kinds[j] == COCELL_LABELLED ? cg_join(g, g->ctor[j], "_E") : NULL;
+    g->step[j] = cofield ? cg_binder(g, "t", cg_join(g, "_", ctor->fields[j].name)) : NULL;
+    if ((cofield && (g->ctor[j] == NULL || g->step[j] == NULL)) || (g->kinds[j] == COCELL_LABELLED && g->etype[j] == NULL))
+      return 0;
+  }
+  g->pos = cg_join(g, d, "_pos");
+  g->here = cg_join(g, d, "_here");
+  g->walk = cg_join(g, d, "_walk");
+  g->A = cg_binder(g, "A", "");
+  g->S = cg_binder(g, "S", "");
+  g->o = cg_binder(g, "o", "");
+  g->seed = cg_binder(g, "seed", "");
+  g->p = cg_binder(g, "p", "");
+  g->s = cg_binder(g, "s", "");
+  g->ih = cg_binder(g, "ih", "");
+  g->e = cg_binder(g, "e", "");
+  g->x = cg_binder(g, "x", "");
+  return g->pos != NULL && g->here != NULL && g->walk != NULL && g->A != NULL && g->S != NULL && g->o != NULL && g->seed != NULL && g->p != NULL && g->s != NULL && g->ih != NULL && g->e != NULL && g->x != NULL;
+}
+
+/* Before each generated declaration: the state of check_program for a new
+   declaration (cocell_shape pushed the parameter and the fields), then
+   the name check. */
+static int cg_start(const Cogen *g, const char *name) {
+  Checker *c = g->c;
+  c->scope = NULL;
+  c->env = NULL;
+  c->level = 0;
+  c->depth = 0;
+  c->self = NO_FAMILY;
+  c->m->def = name;
+  return name == NULL ? FAIL(c, "OOM", "out of memory") : name_free(c, name);
+}
+
+static int cg_def(const Cogen *g, const char *name, const Term *type, const Term *body) {
+  Decl d;
+  if (type == NULL || body == NULL)
+    return FAIL(g->c, "OOM", "out of memory");
+  if (!cg_start(g, name))
+    return 0;
+  memset(&d, 0, sizeof d);
+  d.kind = DECL_DEF;
+  d.origin = ORIGIN_DOMAIN;
+  d.line = d.end_line = g->d->line;
+  d.col = d.end_col = g->d->col;
+  d.name = name;
+  d.type = type;
+  d.body = body;
+  return check_def(g->c, &d);
+}
+
+/* The label type D_f_E, the twin of intent-lang check_label: its closed
+   normal form from cocell_shape, registered directly. */
+static int cg_label(const Cogen *g, uint32_t j, uint64_t level, const Core *type) {
+  Machine *m = g->c->m;
+  DefInfo *info = &m->defs[m->def_count];
+  const Value *u = val_univ(m, level);
+  if (!cg_start(g, g->etype[j]))
+    return 0;
+  if (u == NULL)
+    return FAIL(g->c, "OOM", "out of memory");
+  info->name = g->etype[j];
+  info->origin = ORIGIN_DOMAIN;
+  info->body = type;
+  info->type = u;
+  info->value = NULL;
+  m->def_count++;
+  return 1;
+}
+
+static int cg_pos(const Cogen *g) {
+  Arena *a = g->c->m->arena;
+  Ctor *ctors = arena_alloc(a, (g->count + 1u) * sizeof *ctors);
+  const Term *pos = cg_var(g, g->pos);
+  Decl d;
+  uint32_t j, k = 1;
+  if (ctors == NULL || pos == NULL)
+    return FAIL(g->c, "OOM", "out of memory");
+  memset(ctors, 0, (g->count + 1u) * sizeof *ctors);
+  ctors[0].name = g->here;
+  ctors[0].line = g->d->line;
+  ctors[0].col = g->d->col;
+  for (j = 0; j < g->count; j++) {
+    int labelled = g->kinds[j] == COCELL_LABELLED;
+    Field *fields;
+    if (g->kinds[j] == COCELL_OBSERVATION)
+      continue;
+    fields = arena_alloc(a, 2u * sizeof *fields);
+    if (fields == NULL || (labelled && (fields[0].type = cg_var(g, g->etype[j])) == NULL))
+      return FAIL(g->c, "OOM", "out of memory");
+    /* Field names are global, so each position constructor needs its own. */
+    fields[labelled].name = cg_join(g, g->ctor[j], ".rest");
+    if (fields[labelled].name == NULL)
+      return FAIL(g->c, "OOM", "out of memory");
+    if (labelled) {
+      fields[0].name = cg_join(g, g->ctor[j], ".label");
+      if (fields[0].name == NULL)
+        return FAIL(g->c, "OOM", "out of memory");
+    }
+    fields[labelled].type = pos;
+    fields[0].line = fields[1].line = g->d->line;
+    fields[0].col = fields[1].col = g->d->col;
+    ctors[k].name = g->ctor[j];
+    ctors[k].fields = fields;
+    ctors[k].field_count = labelled ? 2u : 1u;
+    ctors[k].line = g->d->line;
+    ctors[k].col = g->d->col;
+    k++;
+  }
+  if (!cg_start(g, g->pos))
+    return 0;
+  memset(&d, 0, sizeof d);
+  d.kind = DECL_FAMILY;
+  d.origin = ORIGIN_DOMAIN;
+  d.line = d.end_line = g->d->line;
+  d.col = d.end_col = g->d->col;
+  d.name = g->pos;
+  d.type = cg_univ(g, 0);
+  d.ctors = ctors;
+  d.ctor_count = k;
+  return d.type == NULL ? FAIL(g->c, "OOM", "out of memory") : check_family(g->c, &d);
+}
+
+/* D A, for the binder A. */
+static const Term *cg_carrier_at(const Cogen *g) {
+  return cg_app(g, cg_var(g, g->d->name), cg_var(g, g->A));
+}
+
+/* D : (A : Type n) → Type n, the body λ (A : Type n) → (p : D_pos) → A. */
+static int cg_carrier(const Cogen *g) {
+  return cg_def(g, g->d->name, cg_pi(g, g->A, cg_univ(g, g->n), cg_univ(g, g->n)),
+                cg_lam(g, g->A, cg_univ(g, g->n), cg_pi(g, g->p, cg_var(g, g->pos), cg_var(g, g->A))));
+}
+
+/* The destructor of the field J: the observation x D_here, the field
+   λ p → x (D_f p), the labelled field λ e → λ p → x (D_f e p). */
+static int cg_dtor(const Cogen *g, uint32_t j) {
+  const char *name = g->d->ctors[0].fields[j].name;
+  const Term *u = cg_univ(g, g->n);
+  const Term *at = cg_carrier_at(g);
+  const Term *pos = cg_var(g, g->pos);
+  const Term *x = cg_var(g, g->x);
+  const Term *p = cg_var(g, g->p);
+  const Term *type = NULL, *body = NULL;
+  switch (g->kinds[j]) {
+  case COCELL_OBSERVATION:
+    type = cg_pi(g, g->x, at, cg_var(g, g->A));
+    body = cg_lam(g, g->x, at, cg_app(g, x, cg_var(g, g->here)));
+    break;
+  case COCELL_COFIELD:
+    type = cg_pi(g, g->x, at, at);
+    body = cg_lam(g, g->x, at, cg_lam(g, g->p, pos, cg_app(g, x, cg_app(g, cg_var(g, g->ctor[j]), p))));
+    break;
+  case COCELL_LABELLED:
+    type = cg_pi(g, g->x, at, cg_pi(g, g->e, cg_var(g, g->etype[j]), at));
+    body = cg_lam(g, g->x, at, cg_lam(g, g->e, cg_var(g, g->etype[j]), cg_lam(g, g->p, pos, cg_app(g, x, cg_app(g, cg_app(g, cg_var(g, g->ctor[j]), cg_var(g, g->e)), p)))));
+    break;
+  }
+  return cg_def(g, name, cg_pi(g, g->A, u, type), cg_lam(g, g->A, u, body));
+}
+
+/* S → S. */
+static const Term *cg_endo(const Cogen *g) {
+  return cg_pi(g, NULL, cg_var(g, g->S), cg_var(g, g->S));
+}
+
+/* The type of the step of the field J: S → S, or S → D_f_E → S. */
+static const Term *cg_step_type(const Cogen *g, uint32_t j) {
+  return g->kinds[j] == COCELL_LABELLED ? cg_pi(g, NULL, cg_var(g, g->S), cg_pi(g, NULL, cg_var(g, g->etype[j]), cg_var(g, g->S))) : cg_endo(g);
+}
+
+/* The step binders from the field J on, around INNER: a Pi telescope, or
+   lambdas when LAM. */
+static const Term *cg_steps(const Cogen *g, uint32_t j, const Term *inner, int lam) {
+  const Term *rest;
+  if (j == g->count)
+    return inner;
+  rest = cg_steps(g, j + 1u, inner, lam);
+  if (g->kinds[j] == COCELL_OBSERVATION)
+    return rest;
+  return lam ? cg_lam(g, g->step[j], cg_step_type(g, j), rest) : cg_pi(g, g->step[j], cg_step_type(g, j), rest);
+}
+
+/* The fold case of the field J: the step first, then the rest of the
+   walk (tailLaw by refl needs this order). */
+static const Term *cg_case(const Cogen *g, uint32_t j) {
+  const Term *s = cg_var(g, g->s);
+  const Term *t = cg_app(g, cg_var(g, g->step[j]), s);
+  const Term *k = cg_lam(g, g->ih, cg_endo(g), cg_lam(g, g->s, cg_var(g, g->S), cg_app(g, cg_var(g, g->ih), g->kinds[j] == COCELL_LABELLED ? cg_app(g, t, cg_var(g, g->e)) : t)));
+  return g->kinds[j] == COCELL_LABELLED ? cg_lam(g, g->e, cg_var(g, g->etype[j]), k) : k;
+}
+
+/* D_walk : (S : Type n) → steps → (p : D_pos) → S → S, the body
+   λ S steps p → fold (λ (s : S) → s) cases p. */
+static int cg_walk(const Cogen *g) {
+  const Term *u = cg_univ(g, g->n);
+  const Term *f = cg_app(g, cg_var(g, "fold"), cg_lam(g, g->s, cg_var(g, g->S), cg_var(g, g->s)));
+  uint32_t j;
+  for (j = 0; j < g->count; j++)
+    if (g->kinds[j] != COCELL_OBSERVATION)
+      f = cg_app(g, f, cg_case(g, j));
+  f = cg_app(g, f, cg_var(g, g->p));
+  return cg_def(g, g->walk, cg_pi(g, g->S, u, cg_steps(g, 0, cg_pi(g, g->p, cg_var(g, g->pos), cg_endo(g)), 0)),
+                cg_lam(g, g->S, u, cg_steps(g, 0, cg_lam(g, g->p, cg_var(g, g->pos), f), 1)));
+}
+
+/* The corecursor c : (A : Type n) → (S : Type n) → (o : S → A) → steps →
+   (seed : S) → D A, the body λ A S o steps seed → λ (p : D_pos) →
+   o (D_walk S steps p seed). */
+static int cg_corec(const Cogen *g) {
+  const Term *u = cg_univ(g, g->n);
+  const Term *ot = cg_pi(g, NULL, cg_var(g, g->S), cg_var(g, g->A));
+  const Term *w = cg_app(g, cg_var(g, g->walk), cg_var(g, g->S));
+  const Term *body;
+  uint32_t j;
+  for (j = 0; j < g->count; j++)
+    if (g->kinds[j] != COCELL_OBSERVATION)
+      w = cg_app(g, w, cg_var(g, g->step[j]));
+  w = cg_app(g, cg_app(g, w, cg_var(g, g->p)), cg_var(g, g->seed));
+  body = cg_lam(g, g->seed, cg_var(g, g->S), cg_lam(g, g->p, cg_var(g, g->pos), cg_app(g, cg_var(g, g->o), w)));
+  return cg_def(g, g->d->ctors[0].name,
+                cg_pi(g, g->A, u, cg_pi(g, g->S, u, cg_pi(g, g->o, ot, cg_steps(g, 0, cg_pi(g, g->seed, cg_var(g, g->S), cg_carrier_at(g)), 0)))),
+                cg_lam(g, g->A, u, cg_lam(g, g->S, u, cg_lam(g, g->o, ot, cg_steps(g, 0, body, 1)))));
+}
+
+/* A codata declaration (rule R1): the CC criterion, then the generated
+   declarations in the order of Cogen. */
+static int check_cofamily(Checker *c, const Decl *d) {
+  Machine *m = c->m;
+  size_t count = d->ctor_count == 1u ? d->ctors[0].field_count : 0u;
+  CocellField *kinds = arena_alloc(m->arena, (count + 1u) * sizeof *kinds);
+  uint64_t *labels = arena_alloc(m->arena, (count + 1u) * sizeof *labels);
+  const Core **label_types = arena_alloc(m->arena, (count + 1u) * sizeof *label_types);
+  Cogen g;
+  uint32_t j;
+  if (kinds == NULL || labels == NULL || label_types == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  memset(&g, 0, sizeof g);
+  if (!cocell_shape(c, d, &g.n, kinds, labels, label_types))
+    return 0;
+  g.c = c;
+  g.d = d;
+  g.kinds = kinds;
+  g.count = (uint32_t)count;
+  if (!cg_names(&g))
+    return FAIL(c, "OOM", "out of memory");
+  for (j = 0; j < g.count; j++)
+    if (kinds[j] == COCELL_LABELLED && !cg_label(&g, j, labels[j], label_types[j]))
+      return 0;
+  if (!cg_pos(&g) || !cg_carrier(&g))
+    return 0;
+  for (j = 0; j < g.count; j++)
+    if (!cg_dtor(&g, j))
+      return 0;
+  return cg_walk(&g) && cg_corec(&g);
+}
+
 static int check_decl(Checker *c, const Decl *d) {
   if (program_data(d))
     return FAIL(c, "REFUSE_DATA", "a program cannot declare data with no type argument; a base type comes only from domain/domain.lang (rule R2)");
@@ -2209,27 +2684,41 @@ static int check_decl(Checker *c, const Decl *d) {
     return FAIL(c, "REFUSE_REC", "a rec declaration is refused (rule R3); use fold");
   if (!name_free(c, d->name))
     return 0;
+  if (d->kind == DECL_COFAMILY)
+    return check_cofamily(c, d);
   return d->kind == DECL_FAMILY ? check_family(c, d) : check_def(c, d);
 }
 
 int check_program(Arena *arena, const DeclList *decls, Machine *m, Diag *diag) {
   Checker c;
   size_t ctors = 0;
+  size_t defs = decls->count;
+  size_t families = decls->count;
   size_t i;
   memset(m, 0, sizeof *m);
   c.face = NULL;
   m->arena = arena;
   m->diag = diag;
   m->fuel = EVAL_FUEL_STEPS;
-  for (i = 0; i < decls->count; i++)
-    ctors += decls->items[i].ctor_count;
-  m->defs = arena_alloc(arena, (decls->count + 1u) * sizeof *m->defs);
-  m->families = arena_alloc(arena, (decls->count + 1u) * sizeof *m->families);
+  /* A codata with F fields gives one family (D_pos), at most 1 + F
+     constructors and at most 3 + 2F definitions (check_cofamily). */
+  for (i = 0; i < decls->count; i++) {
+    const Decl *d = &decls->items[i];
+    size_t f = d->kind == DECL_COFAMILY && d->ctor_count == 1u ? d->ctors[0].field_count : 0u;
+    ctors += d->ctor_count;
+    if (d->kind == DECL_COFAMILY) {
+      families += 1u;
+      ctors += 1u + f;
+      defs += 3u + 2u * f;
+    }
+  }
+  m->defs = arena_alloc(arena, (defs + 1u) * sizeof *m->defs);
+  m->families = arena_alloc(arena, (families + 1u) * sizeof *m->families);
   m->ctors = arena_alloc(arena, (ctors + 1u) * sizeof *m->ctors);
   if (m->defs == NULL || m->families == NULL || m->ctors == NULL)
     return diag_fail(diag, "OOM", NULL, "out of memory");
-  m->def_cap = (uint32_t)decls->count;
-  m->family_cap = (uint32_t)decls->count;
+  m->def_cap = (uint32_t)defs;
+  m->family_cap = (uint32_t)families;
   m->ctor_cap = (uint32_t)ctors;
   memset(&c, 0, sizeof c);
   c.m = m;

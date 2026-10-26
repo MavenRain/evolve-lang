@@ -188,6 +188,7 @@ static int starts_atom(TokKind kind) {
     case TOK_KW_REC:
     case TOK_KW_FUN:
     case TOK_KW_DATA:
+    case TOK_KW_CODATA:
     case TOK_KW_WHERE:
     case TOK_KW_POSTULATE:
     case TOK_TILDE: /* `p ~ i` is not an application; write `p (~ i)` */
@@ -423,6 +424,7 @@ static const Term *parse_atom(Parser *p) {
     case TOK_KW_REC:
     case TOK_KW_FUN:
     case TOK_KW_DATA:
+    case TOK_KW_CODATA:
     case TOK_KW_WHERE:
     case TOK_KW_POSTULATE:
     case TOK_MEET:
@@ -730,10 +732,11 @@ static int parse_head(Parser *p, Decl *d) {
   return expect(p, TOK_KW_TYPE, "'Type'");
 }
 
+/* `data` or `codata`: the keyword gives the kind. */
 static int parse_data(Parser *p, Decl *d) {
+  d->kind = at(p, TOK_KW_CODATA) ? DECL_COFAMILY : DECL_FAMILY;
   bump(p);
-  d->kind = DECL_FAMILY;
-  d->name = take_name(p, "a data type name");
+  d->name = take_name(p, d->kind == DECL_COFAMILY ? "a codata type name" : "a data type name");
   p->stop = 1;
   if (d->name == NULL) return 0;
   p->def = d->name;
@@ -759,7 +762,8 @@ static int parse_data(Parser *p, Decl *d) {
 static int parse_decl_body(Parser *p, Decl *d) {
   switch (cur(p)->kind) {
     case TOK_KW_POSTULATE: return parse_postulate(p, d);
-    case TOK_KW_DATA: return parse_data(p, d);
+    case TOK_KW_DATA:
+    case TOK_KW_CODATA: return parse_data(p, d);
     case TOK_KW_REC:
     case TOK_IDENT: return parse_def(p, d);
     case TOK_EOF:
@@ -786,7 +790,7 @@ static int parse_decl_body(Parser *p, Decl *d) {
     case TOK_MAPSTO:
       break;
   }
-  return fail_at(p, cur(p), "a signature, 'rec', 'postulate' or 'data'");
+  return fail_at(p, cur(p), "a signature, 'rec', 'postulate', 'data' or 'codata'");
 }
 
 /* The head token is read with stop 0; the parts after it set stop 1. */

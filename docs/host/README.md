@@ -186,12 +186,12 @@ how to replace the sample domain.
 |---|---|
 | `examples: 10 checked, 0 failed` | `langc check` accepts each `examples/*.lang` file |
 | `parse refusals: 10 checked` | each `test/parse` file fails with the code in `test/parse/expect.txt`; one file has 1100 nested parentheses |
-| `check refusals: 37 checked` | each `test/check` mutant fails with the code in `test/check/expect.txt`, and with the message text when the line has text after the code; the `TYPE_REFL` message shows both normal forms |
-| `evals: 53 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
+| `check refusals: 51 checked` | each `test/check` mutant fails with the code in `test/check/expect.txt`, and with the message text when the line has text after the code; the `TYPE_REFL` message shows both normal forms |
+| `evals: 58 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
 | `ir: 10 lowered` | `langc ir` lowers each example, with one `func` for each `abi` line |
 | `wasm: 13 modules valid` | `langc build` writes a module for each example and for `test/ir/spine.lang`, `test/ir/lazy.lang` and `test/ir/proof-trap.lang`; `wasm-validate` and `wasm-objdump -x` accept it |
 | `differential: 773 cases, 0 mismatches` | node runs each entry on the grid of `test/grid.awk`; each result is equal to the `langc eval` result, and a trap is equal to a trap |
-| `fmt: 81 canonical, 5 non-canonical pairs` | `langc fmt` keeps each committed `.lang` file and each canonical `test/fmt` file the same; it is idempotent, and its output parses to the same terms; each non-canonical `test/fmt` input gives its expected canonical text |
+| `fmt: 97 canonical, 6 non-canonical pairs` | `langc fmt` keeps each committed `.lang` file and each canonical `test/fmt` file the same; it is idempotent, and its output parses to the same terms; each non-canonical `test/fmt` input gives its expected canonical text |
 | `json: 26 fixtures; diagnostics: 38 codes, 24 with a fixture, 14 with no fixture` | each `test/json` fixture gives the JSON shape of its code; each fixture code is in `docs/DIAGNOSTICS.md` |
 | `gate: 0 failures` | the sum of all failures |
 

@@ -20,6 +20,7 @@ typedef enum {
   TOK_KW_REC,
   TOK_KW_FUN,   /* the alias of λ */
   TOK_KW_DATA,
+  TOK_KW_CODATA,
   TOK_KW_WHERE,
   TOK_KW_POSTULATE,
   TOK_KW_TYPE,

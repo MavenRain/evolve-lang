@@ -57,10 +57,18 @@ data Lot (size : ℕ) : Type where
   if a field has no name, the parser gives `PARSE_CTOR_RESULT`. Each named
   Pi binder of a constructor type is a field: `(itemPrice : ℕ)` gives the
   field `itemPrice`.
+- `codata` declares a cofamily (S2c). The block has one clause. The
+  clause name is the corecursor, and the clause fields are the
+  observation and the fields of the cofamily:
+  `corec : (head : A) → (tail : Stream A) → Stream A`. Each field name is
+  a destructor with an explicit type argument: `head ℕ s`, `tail ℕ s`.
+  `corec A S h t s` gives the stream of the seed `s : S`. The parser takes
+  more than one clause; the checker refuses it.
 
 The compiler refuses these forms in a program: `data` with no type
 argument (`REFUSE_DATA`, rule R2), `data` with a type argument that is not
-a cell signature (`REFUSE_CELL`, rule R1), `postulate` (`REFUSE_AXIOM`),
+a cell signature and `codata` that is not a cocell signature
+(`REFUSE_CELL`, rule R1), `postulate` (`REFUSE_AXIOM`),
 and `rec` or a reference to the same or a later definition (`REFUSE_REC`,
 rule R3). It also refuses a declaration that uses a core name, a domain
 name, the reserved word `Text` or a name that is already declared
@@ -76,6 +84,7 @@ or general recursion. Recursion comes only from
 decl   := 'postulate' NAME ':' term
         | 'rec'? NAME ':' term NAME NAME* '=' term
         | 'data' NAME group* ':' 'Type' 'where' ctor+
+        | 'codata' NAME group* ':' 'Type' 'where' ctor+
 ctor   := NAME ':' term
 group  := '(' NAME+ ':' term ')'
 term   := 'λ' (NAME | group)+ '→' term
@@ -88,8 +97,8 @@ atom   := NAME | NAT | 'Type' NAT | '(' term ')'
 A NAME starts with an ASCII letter or `_`. The next characters are ASCII
 letters, digits, `_` or `'`. The symbol `ℕ` is the name of the natural
 numbers. A NAT is a decimal numeral from 0 to 2^64-1 (`LEX_NAT_RANGE` if
-it is larger). The keywords are `rec`, `postulate`, `data`, `where`,
-`Type`, `fun` and `Sigma`. A non-ASCII character other than `→`, `λ`, `×`
+it is larger). The keywords are `rec`, `postulate`, `data`, `codata`,
+`where`, `Type`, `fun` and `Sigma`. A non-ASCII character other than `→`, `λ`, `×`
 and `ℕ` gives `LEX_CHAR`.
 
 ### 2.3 Spellings and ASCII aliases

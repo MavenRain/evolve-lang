@@ -70,7 +70,7 @@ static int json_encoding(void) {
 }
 
 static const char *const TERM_KINDS[] = {"var", "nat", "app", "lam", "pi", "sigma", "univ"};
-static const char *const DECL_KINDS[] = {"def", "postulate", "data"};
+static const char *const DECL_KINDS[] = {"def", "postulate", "data", "codata"};
 
 static void dump_term(const char *role, const Term *t, int depth) {
   if (t == NULL) return;

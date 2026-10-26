@@ -285,3 +285,90 @@ of a path constructor) and `ends` (2 * depth ends).
   docs that said that a program cannot declare `data` (`SPEC.md`,
   `domain/README.md`, `formers/tcc-wasm.md`, `docs/host/README.md`).
 - Q-S2b-1 to Q-S2b-8 are open (PLAN section 11).
+
+## S2c: kernel part 3 (codata, the CC branch of `REFUSE_CELL`)
+
+S2c adds `codata` (Q-S2c-1 (a)). A `codata` type has one clause. The
+clause name is the corecursor (`corec`). The clause fields are the
+observation `head : A` and the field `tail : Stream A` (Q-S2c-3 (a)). The
+destructors `head` and `tail` take an explicit type argument, as in
+`head ℕ s` (Q-S2c-8 (a)). A field can have a label: `E → D A`
+(Q-S2c-6 (a)). A program cofamily runs the CC criterion (the CC branch of
+`REFUSE_CELL`, rule R1), and the checker admits a cofamily that passes it
+(Q-S2c-2 (a)). `test/eval/streams.lang` declares `Stream`.
+
+### Source
+- intent-lang 67445ae. S2c is a hand port, not a patch. It changes 17
+  files (10 source and test files, 7 docs) and adds 17 files: 14
+  `test/check/codata-*.lang` files, `test/eval/streams.lang`,
+  `test/fmt/codata.lang` and `test/fmt/codata.canon`.
+
+### Gate counts against S2b
+
+| Count | S2b | S2c |
+|---|---|---|
+| examples | 10 | 10 |
+| parse refusals | 10 | 10 |
+| check refusals | 37 | 51 |
+| evals | 53 | 58 |
+| ir lowered | 10 | 10 |
+| wasm modules | 13 | 13 |
+| differential cases (0 mismatches) | 773 | 773 |
+| fmt canonical, non-canonical pairs | 81, 5 | 97, 6 |
+| json fixtures | 26 | 26 |
+| diagnostics codes (fixture, no fixture) | 38 (24, 14) | 38 (24, 14) |
+| cubical checks, round trips | 22, 8 | 32, 8 |
+
+The gate has 0 failures. The review, domain and diagnostic edit
+regressions pass.
+
+### Mutants
+Each mutant edits one branch of `src/front/check.c`. C1 to C10 are the
+mutants of the S2c survey. D1 drops the duplicate-field loop. These 11
+mutants are all KILLED. Two more mutants test the U4 fixtures: C10b is
+KILLED and S1 SURVIVES.
+
+| Mutant | Branch | Result |
+|---|---|---|
+| C1 | observation test off by one | KILLED: 15 FAIL lines: the 5 evals of `streams.lang`, the 2 checks of `test/fmt/codata` and 8 check pins |
+| C2 | admit two observations | KILLED: `codata-two-obs.lang` gives exit 0 (after the fix F-U5-1) |
+| C3 | admit no observation | KILLED: `codata-no-obs.lang` gives exit 0 |
+| C4 | one type parameter | KILLED: `codata-params.lang` gives `TYPE_NOT_FUNCTION` |
+| C5 | the parameter is a universe | KILLED by the pin "is not a universe" of `codata-value-param.lang` |
+| C6 | no index | KILLED: `codata-index.lang` gives `TYPE_NOT_FUNCTION` |
+| C7 | the argument test of `cocell_app` | KILLED: `codata-other-arg.lang` and `codata-nested.lang` give exit 0 |
+| C8 | the label is closed | KILLED: `codata-open-label.lang` gives `INTERNAL` |
+| C9 | the walk order of the corecursor | KILLED by the cubical check "codata tail law" (`TYPE_REFL`) |
+| C10 | one clause, not a path constructor | KILLED: `codata-clauses.lang` gives exit 0; `codata-result.lang` gives "it has 0 observations" |
+| D1 | the duplicate-field loop | KILLED by the pin "tail is already a field of this clause" of `codata-dup-field.lang` |
+| C10b | the result half of the clause rule | KILLED by the pin of `codata-result.lang` |
+| S1 | the parameter check and the index check swapped | SURVIVED: each fixture has one top-level fault, so the order is not observable |
+
+Without its pin, C5 survives: a later branch gives the same code
+(Q-S2b-7 (a)). Without its pin, D1 survives: a later `REFUSE_NAME`
+branch gives the same code. C8 shows that the closed-label check also
+guards the evaluator: without it, an open label reaches `INTERNAL`.
+
+F-U5-1 (FIXED): the second observation of `codata-two-obs.lang` was
+`top`, a field of the domain constructor `push`. The shape check runs
+first, so the pin passed. Under C2, the R4 field check gave
+`REFUSE_NAME`. The fixture now uses `peek`. The counts do not change.
+
+### Op values
+51 Op values, no change (Q-S2c-4 (a)). The position encoding is built as
+Core in C. `eval.c`, `lower.c` and `core.h` do not change.
+
+### Review fix
+
+Each position constructor has distinct internal field names. Reusing
+`D.rest` and `D.label` caused valid signatures with multiple recursive
+fields to fail with `REFUSE_NAME`. Two cubical regressions check mixed
+observations of plain and labelled fields with different state steps.
+
+### Open items from S2c
+- `StreamBisim` goes to S3 (Q-S2c-5 (a)).
+- S3 decides the domain place of `Stream` (Q-S2c-2 (a)).
+- F-U4-1 is open: 7 FAIL sites of cocell_shape give the texts of the 13
+  survey branches (PLAN section 11).
+- Q-S2c-1 to Q-S2c-8 are RULED (a). Q-S2b-1 to Q-S2b-8 stay open (PLAN
+  section 11).

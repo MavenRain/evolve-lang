@@ -236,9 +236,10 @@ static void put_ctor(FmtText *out, const Decl *d, const Ctor *c) {
   }
 }
 
-/* `data F (p : A) : Type where`, then one constructor a line. */
+/* `data F (p : A) : Type where` (or `codata`), then one constructor a
+   line. */
 static void put_data(FmtText *out, const Decl *d) {
-  put_str(out, "data ");
+  put_str(out, d->kind == DECL_COFAMILY ? "codata " : "data ");
   put_str(out, d->name);
   for (size_t i = 0; i < d->param_count; i++) {
     put_str(out, " ");
@@ -265,6 +266,7 @@ void fmt_decl(FmtText *out, const Decl *decl) {
       put_term(out, decl->type, LEVEL_BINDER);
       break;
     case DECL_FAMILY:
+    case DECL_COFAMILY:
       put_data(out, decl);
       break;
   }

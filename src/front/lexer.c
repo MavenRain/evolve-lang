@@ -25,6 +25,7 @@ static const struct {
   {"rec", TOK_KW_REC},
   {"fun", TOK_KW_FUN},
   {"data", TOK_KW_DATA},
+  {"codata", TOK_KW_CODATA},
   {"where", TOK_KW_WHERE},
   {"postulate", TOK_KW_POSTULATE},
   {"Type", TOK_KW_TYPE},
@@ -64,6 +65,7 @@ const char *tok_kind_name(TokKind kind) {
     case TOK_KW_REC: return "'rec'";
     case TOK_KW_FUN: return "'fun'";
     case TOK_KW_DATA: return "'data'";
+    case TOK_KW_CODATA: return "'codata'";
     case TOK_KW_WHERE: return "'where'";
     case TOK_KW_POSTULATE: return "'postulate'";
     case TOK_TILDE: return "'~'";

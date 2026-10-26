@@ -86,7 +86,36 @@ int main(void) {
     {"refl on both faces", "value : (p : Path ℕ 0 1) → (i : I) → Partial (i ∨ ~ i) (Path ℕ (p i) 1)\nvalue p i = [ i ∨ ~ i ↦ refl ]\n", "TYPE_REFL"},
     {"trans on wrong face", "value : (p : Path ℕ 0 1) → (i : I) → (q : Path ℕ 0 (p i)) → (r : Path ℕ 1 2) → Partial (~ i) (Path ℕ 0 2)\nvalue p i q r = [ ~ i ↦ trans q r ]\n", "TYPE_MISMATCH"},
     {"squash at i0", "data Trunc (A : Type 0) : Type where\n  inc : (a : A) → Trunc A\n  squash : (x : Trunc A) → (y : Trunc A) → Path (Trunc A) x y\nvalue : (A : Type 0) → (u : Trunc A) → (v : Trunc A) → Path (Trunc A) (squash A u v i0) u\nvalue A u v = refl\n", NULL},
-    {"squash at i1", "data Trunc (A : Type 0) : Type where\n  inc : (a : A) → Trunc A\n  squash : (x : Trunc A) → (y : Trunc A) → Path (Trunc A) x y\nvalue : (A : Type 0) → (u : Trunc A) → (v : Trunc A) → Path (Trunc A) (squash A u v i1) v\nvalue A u v = refl\n", NULL}
+    {"squash at i1", "data Trunc (A : Type 0) : Type where\n  inc : (a : A) → Trunc A\n  squash : (x : Trunc A) → (y : Trunc A) → Path (Trunc A) x y\nvalue : (A : Type 0) → (u : Trunc A) → (v : Trunc A) → Path (Trunc A) (squash A u v i1) v\nvalue A u v = refl\n", NULL},
+    {"codata Stream", "codata Stream (A : Type 0) : Type where\n  corec : (head : A) → (tail : Stream A) → Stream A\n", NULL},
+    {"codata labelled field", "codata Stream (A : Type 0) : Type where\n  corec : (head : A) → (pick : ℕ → Stream A) → Stream A\n", NULL},
+    {"codata head law",
+     "codata Stream (A : Type 0) : Type where\n  corec : (head : A) → (tail : Stream A) → Stream A\n"
+     "headLaw : (A : Type 0) → (S : Type 0) → (o : S → A) → (t : S → S) → (seed : S) → Path A (head A (corec A S o t seed)) (o seed)\n"
+     "headLaw A S o t seed = refl\n", NULL},
+    {"codata tail law",
+     "codata Stream (A : Type 0) : Type where\n  corec : (head : A) → (tail : Stream A) → Stream A\n"
+     "tailLaw : (A : Type 0) → (S : Type 0) → (o : S → A) → (t : S → S) → (seed : S) → Path (Stream A) (tail A (corec A S o t seed)) (corec A S o t (t seed))\n"
+     "tailLaw A S o t seed = refl\n", NULL},
+    {"codata then def label",
+     "codata Stream (A : Type 0) : Type where\n  corec : (head : A) → (tail : Stream A) → Stream A\n"
+     "label : ℕ\nlabel = 0\n", NULL},
+    {"codata field named Stream",
+     "codata Stream (A : Type 0) : Type where\n  corec : (head : A) → (Stream : Stream A) → Stream A\n", "REFUSE_NAME"},
+    {"codata field two times",
+     "codata Stream (A : Type 0) : Type where\n  corec : (head : A) → (tail : Stream A) → (tail : Stream A) → Stream A\n", "REFUSE_NAME"},
+    {"codata generated name taken",
+     "Stream_pos : ℕ\nStream_pos = 0\n"
+     "codata Stream (A : Type 0) : Type where\n  corec : (head : A) → (tail : Stream A) → Stream A\n", "REFUSE_NAME"},
+    {"codata two recursive fields",
+     "codata Branches (A : Type 0) : Type where\n  grow : (observe : A) → (left : Branches A) → (right : Branches A) → Branches A\n"
+     "value : Path ℕ (observe ℕ (right ℕ (left ℕ (grow ℕ ℕ (λ (s : ℕ) → s) (λ (s : ℕ) → natAdd s 1) (λ (s : ℕ) → natMul s 2) 3)))) 8\n"
+     "value = refl\n", NULL},
+    {"codata mixed recursive fields",
+     "codata Route (A : Type 0) : Type where\n  collect : (viaNat : ℕ → Route A) → (seen : A) → (nextRoute : Route A) → (viaBool : Bool → Route A) → Route A\n"
+     "route : Route ℕ\nroute = collect ℕ ℕ (λ (s : ℕ) → s) (λ (s : ℕ) (e : ℕ) → natAdd s e) (λ (s : ℕ) → natMul s 2) (λ (s : ℕ) (e : Bool) → natMul s 3) 3\n"
+     "value : Path ℕ (seen ℕ (viaBool ℕ (nextRoute ℕ (viaNat ℕ route 5)) true)) 48\n"
+     "value = refl\n", NULL}
   };
   static const struct { const char *label; const char *signature; const char *body; } rounds[] = {
     {"hcomp", "(p : Path ℕ 0 0) → (i : I) → ℕ", "λ p i → hcomp (λ j → [ i ↦ p j ]) 0"},

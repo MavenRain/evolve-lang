@@ -444,7 +444,7 @@ on the new checks, docs, close (stage, commit message, next prompt).
 | S1 | surface: Agda-like Unicode (Q7), `langc fmt`, `W_NONCANON`, `check --json` with progress counts; drop the refused kit names (port from leaf-lang e3e2338) | `make check` EXIT 0: examples 10 checked, 0 failed; parse refusals 9; check refusals 18; evals 30; ir 10 lowered; wasm 13 modules valid; differential 772 cases, 0 mismatches; fmt 50 canonical, 3 non-canonical pairs (round trip and idempotence); json 20 fixtures, diagnostics 31 codes (18 with a fixture, 13 with no fixture); gate 0 failures; review and domain regressions passed; mutants M1 to M6 killed (docs/STATUS.md, S1) |
 | S2a | kernel part 1: `I`, `i0`, `i1`, `PathP`, `Path`, `transp`, `hcomp`, systems and partial elements; remove the Ops that no program reaches (part of O14). Port of the frozen leaf-lang snapshot (section 8) | `make check` EXIT 0 with the snapshot counts: examples 10; parse refusals 10; check refusals 24; evals 50; ir 10; wasm 13; differential 773 cases, 0 mismatches; fmt 64 canonical, 5 non-canonical pairs; json 24 fixtures, diagnostics 36 codes (22 with a fixture, 14 with no fixture); diagnostic edit regressions passed; mutants on the `transp` face check, the system agreement check and the `hcomp` base check. Measured 2026-10-26: all counts as above, EXIT 0; M1 (`transp` face), M2 (system agreement), M3 (`hcomp` base) KILLED, 3 of 3 |
 | S2b | kernel part 2: indexed families (the `Step : State → State → U` shape, D3), higher constructors, `REFUSE_CELL` for type-parameter `data` (the CM criterion), `Option` (0-cell `none`, generator `some`), `Trunc` (1-cell `squash`). Port from quorum-lang 8dee55b | one check fixture for each refused shape (cons `List`, `Pair`, a type index, a ghost parameter); `Option` and `Trunc` check; `REFUSE_CELL` mutants. Measured 2026-10-26: `make check` EXIT 0: examples 10; parse refusals 10; check refusals 37; evals 53; ir 10; wasm 13; differential 773 cases, 0 mismatches; fmt 81 canonical, 5 non-canonical pairs; json 26 fixtures, diagnostics 38 codes (24 with a fixture, 14 with no fixture); cubical 22 checks, 8 round trips. The builtin `Option` stays; the declared `Maybe` and `Trunc` check (`test/eval/cells.lang`). 14 mutants KILLED of 14 (docs/STATUS.md, S2b); M3 stillborn |
-| S2c | kernel part 3: CC (`Stream`: observation `head`, field `tail`), cofamily, the CC branch of `REFUSE_CELL`. Port from intent-lang 67445ae | `Stream` checks; CC refusal fixtures; mutants on the CC criterion |
+| S2c | kernel part 3: CC (`Stream`: observation `head`, field `tail`), cofamily, the CC branch of `REFUSE_CELL`. Port from intent-lang 67445ae | `Stream` checks; CC refusal fixtures; mutants on the CC criterion. Measured 2026-10-26: `make check` EXIT 0: examples 10; parse refusals 10; check refusals 51; evals 58; ir 10; wasm 13; differential 773 cases, 0 mismatches; fmt 97 canonical, 6 non-canonical pairs; json 26 fixtures, diagnostics 38 codes (24 with a fixture, 14 with no fixture); cubical 32 checks, 8 round trips. `Stream` checks and evaluates (`test/eval/streams.lang`). 11 mutants KILLED of 11 (docs/STATUS.md, S2c); a swap of two checks SURVIVED (the order is not observable) |
 | S2d | kernel part 4: `Fin n` as the defined Sigma of 2.2; O12 (kit `Sum`, `Unit`), the rest of O14, O15 (ASCII value printer); `docs/STATUS.md` S2 section | `Fin` tests; full gate; mutants on the `Fin` bound |
 | S2e | univalence: `Glue`, `glue`, `unglue`, `ua` (2.2, law L3). Port from zkpolicy-lang 1d263fb. It must land before S6; it can run at any time after S2d | `ua` transport test; mutants on `transp_glue` and `hcomp_glue` |
 | S3 | domain: `ColType`, `Null`, `CState`, `State`, `App`, the steps, `Step`, `Chain`; the `table`, `app` and `protocol` forms (Q9); `REFUSE_STEP_INDEX`, `REFUSE_RENAME_INPLACE` | one test per step index; mutants on each precondition |
@@ -575,3 +575,37 @@ reading (a) of each.
   R3 is the host and R4 is the targets. (a) keep the messages in S2b (the
   JSON fixtures pin them); a later slice gives the kit rules their own
   names. (b) change the kit messages and their fixtures now.
+
+Questions from S2c (2026-10-26). The USER ruled (a) for all eight on
+2026-10-26.
+
+- Q-S2c-1 keyword. RULED (a) (USER 2026-10-26). `codata`, the Agda-like
+  twin of `data`. Not `cofamily` (intent-lang and the S2c row).
+- Q-S2c-2 place and program rule. RULED (a) (USER 2026-10-26). As Q-S2b-1
+  (a) and Q-S2b-2 (a): a program cofamily runs the CC criterion and a
+  passing one is admitted; `Stream` is in `test/eval/streams.lang`; S3
+  decides the domain place; the CC fixtures are `test/check` files.
+- Q-S2c-3 clause surface. RULED (a) (USER 2026-10-26). One clause whose
+  name is the corecursor and whose fields are the observation and the
+  fields of the cofamily (types `A` and `Stream A`), as intent-lang;
+  parse_ctor is reused; the destructors `head` and `tail` get the types
+  of 2.2.
+- Q-S2c-4 representation. RULED (a) (USER 2026-10-26). The intent-lang
+  position encoding (a pos family, `Stream A = pos → A`, a fold walk),
+  built as Decl or Core in C with legal evolve-lang names; `eval.c` and
+  `lower.c` do not change.
+- Q-S2c-5 bisimulation. RULED (a) (USER 2026-10-26). `StreamBisim` goes
+  to S3 (the dependent eliminator); evolve-lang has no `elim` and no
+  `funExt`.
+- Q-S2c-6 labelled fields `E → D A` (2.1 admits them; 2.2 does not use
+  them). RULED (a) (USER 2026-10-26). Port them with the closed-label rule
+  and the label universe rule.
+- Q-S2c-7 message text. RULED (a) (USER 2026-10-26). Keep "is not a cocell
+  signature" and "(rule R1)" (as Q-S2b-8 (a)); say "field" for "cofield"
+  (2.2); no and-block branch (evolve-lang has no `and` blocks).
+- Q-S2c-8 destructor arity. RULED (a) (USER 2026-10-26). An explicit type
+  argument, `head ℕ s`, as `just ℕ 5` and `squash A u v` in S2b.
+- F-U4-1 shared `REFUSE_CELL` texts (S2c U4). OPEN, reading (a). The 13
+  survey branches come from 7 FAIL sites of cocell_shape, so some
+  branches give the same text. (a) keep the texts (Q-S2c-7 (a)). (b)
+  split the texts by branch.

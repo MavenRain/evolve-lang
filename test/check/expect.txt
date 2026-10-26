@@ -34,4 +34,18 @@ cell-two-gen.lang REFUSE_CELL
 cell-path-shape.lang REFUSE_CELL must have the type Path T s t
 cell-path-dim.lang REFUSE_CELL has dimension 2
 cell-path-end.lang REFUSE_CELL
+codata-no-obs.lang REFUSE_CELL has 0 observations
+codata-dup-field.lang REFUSE_NAME tail is already a field of this clause
+codata-params.lang REFUSE_CELL it has 2 parameters; a cocell signature has one type parameter
+codata-value-param.lang REFUSE_CELL the parameter n is not a universe
+codata-index.lang REFUSE_CELL it has an index
+codata-clauses.lang REFUSE_CELL it must have one clause, and the clause is not a path constructor
+codata-result.lang REFUSE_CELL it must have one clause, and the clause is not a path constructor
+codata-closed-field.lang REFUSE_CELL the field n must be the observation A
+codata-other-arg.lang REFUSE_CELL the field tail must be the observation A
+codata-nested.lang REFUSE_CELL the field deep must be the observation A
+codata-open-label.lang REFUSE_CELL the field pick must be the observation A
+codata-path-field.lang REFUSE_CELL the field loop must be the observation A
+codata-label-universe.lang REFUSE_CELL the label type of pick is in Type 1, above Type 0 of A
+codata-two-obs.lang REFUSE_CELL it has 2 observations
 hit-fold.lang DOMAIN_FAMILY
