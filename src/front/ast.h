@@ -53,6 +53,7 @@ typedef enum {
 
 /* A family is legal only in the domain file (rule R1). */
 typedef enum {
+  ORIGIN_PRELUDE, /* src/front/prelude.lang: core names (Q-S2e-5) */
   ORIGIN_DOMAIN,
   ORIGIN_PROGRAM
 } Origin;

@@ -1,0 +1,37 @@
+-- Univalence: Glue, glue, unglue and ua. A transport along ua applies the
+-- equivalence, and the run time sees only the result.
+uaNat : Path (Type 0) ℕ ℕ
+uaNat = ua ℕ ℕ (idEquiv ℕ)
+
+uaBeta : (n : ℕ) → Path ℕ (transp (λ i → uaNat i) i0 n) n
+uaBeta n = refl
+
+swap : (p : (x : ℕ) × ℕ) → (x : ℕ) × ℕ
+swap p = pack (payload p) (witness p)
+
+swapEquiv : Equiv ((x : ℕ) × ℕ) ((x : ℕ) × ℕ)
+swapEquiv = pack swap (λ y → pack (pack (swap y) refl) (λ z i → pack (swap (payload z (~ i))) (λ j → payload z (~ i ∨ j))))
+
+uaSwap : Path (Type 0) ((x : ℕ) × ℕ) ((x : ℕ) × ℕ)
+uaSwap = ua ((x : ℕ) × ℕ) ((x : ℕ) × ℕ) swapEquiv
+
+uaBetaSwap : (p : (x : ℕ) × ℕ) → Path ((x : ℕ) × ℕ) (transp (λ i → uaSwap i) i0 p) (swap p)
+uaBetaSwap p = refl
+
+uaSwapped : (x : ℕ) × ℕ
+uaSwapped = transp (λ i → uaSwap i) i0 (pack 3 5)
+
+moved : (n : ℕ) → ℕ
+moved n = transp (λ i → uaNat i) i0 n
+
+first : (a : ℕ) → (b : ℕ) → ℕ
+first a b = witness (transp (λ i → uaSwap i) i0 (pack a b))
+
+gl : (j : I) → Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]
+gl j = glue [ j ↦ 7 ] 7
+
+hcompGlue : (j : I) → Path (Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]) (hcomp (λ l → []) (gl j)) (gl j)
+hcompGlue j = refl
+
+glueEta : (j : I) → (g : Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]) → Path (Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]) (glue [ j ↦ g ] (unglue g)) g
+glueEta j g = refl

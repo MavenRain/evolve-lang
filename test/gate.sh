@@ -145,6 +145,8 @@ done
 build/langc ir test/ir/spine.lang > /dev/null || { echo "FAIL spine.lang: ir"; fail=$((fail + 1)); }
 ir_refused tree REFUSE_RUNTIME_TREE
 ir_refused path REFUSE_RUNTIME_PATH
+ir_refused glue-value REFUSE_RUNTIME_GLUE
+build/langc ir test/ir/glue.lang > /dev/null || { echo "FAIL glue.lang: ir"; fail=$((fail + 1)); }
 
 # The Wasm target: each module builds and is valid. Then the differential: on
 # the grid of test/grid.awk, node and `langc eval` give the same result for
@@ -262,7 +264,7 @@ done
 # docs/DIAGNOSTICS.md has one row for each code in src/. Each code has
 # test/json/CODE.lang (its first JSON line has that code), or its row gives
 # "no fixture:" and a reason; not the two.
-rg -o -I -N -r '$1$2$3' '"((?:LEX|PARSE|REFUSE|TYPE|NAME|EVAL|DOMAIN|W)_[A-Z_]+)"|"(OOM|IO|IO_SIZE|USAGE|INTERNAL)"|langc: ((?:EVAL|REFUSE|TYPE)_[A-Z_]+):' src |
+rg -o -I -N -r '$1$2$3' '"((?:LEX|PARSE|REFUSE|TYPE|NAME|EVAL|DOMAIN|GLUE|UNGLUE|W)_[A-Z_]+)"|"(OOM|IO|IO_SIZE|USAGE|INTERNAL)"|langc: ((?:EVAL|REFUSE|TYPE)_[A-Z_]+):' src |
   LC_ALL=C sort -u >"$tmp/src-codes.txt"
 rg -o -N -r '$1' '^\| `([A-Z_]+)` \|' docs/DIAGNOSTICS.md | LC_ALL=C sort -u >"$tmp/doc-codes.txt"
 if ! cmp -s "$tmp/src-codes.txt" "$tmp/doc-codes.txt"; then

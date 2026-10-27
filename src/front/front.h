@@ -9,6 +9,9 @@
 /* build/domain.c holds the bytes of domain/domain.lang (gen/embed.c). */
 extern const unsigned char domain_source[];
 extern const size_t domain_source_len;
+/* build/prelude.c holds the bytes of src/front/prelude.lang. */
+extern const unsigned char prelude_source[];
+extern const size_t prelude_source_len;
 
 /* The loaded declarations. DECLS holds the DOMAIN_COUNT domain declarations
    first, then the program. TOKS holds the program tokens and comments when

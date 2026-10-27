@@ -72,6 +72,11 @@ static int runtime_path(Low *l) {
   return diag_fail(l->m->diag, "REFUSE_RUNTIME_PATH", l->m->def, "an interval or path value must exist at run time");
 }
 
+/* A Glue type, a glue or an unglue cannot exist at run time. */
+static int runtime_glue(Low *l) {
+  return diag_fail(l->m->diag, "REFUSE_RUNTIME_GLUE", l->m->def, "a Glue, glue or unglue value must exist at run time");
+}
+
 static IrExpr *expr_alloc(Low *l, IrExprKind kind) {
   IrExpr *e = arena_alloc(l->m->arena, sizeof *e);
   if (e == NULL)
@@ -662,6 +667,10 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_SYSMAP:
   case OP_PCTOR:
     return runtime_path(l);
+  case OP_GLUE:
+  case OP_GLUE_ELEM:
+  case OP_UNGLUE:
+    return runtime_glue(l);
   case OP_TRUE:
     return give(l, out, 1, 0);
   case OP_PACK:
@@ -1020,6 +1029,10 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_SYSMAP:
   case OP_PCTOR:
     return runtime_path(l);
+  case OP_GLUE:
+  case OP_GLUE_ELEM:
+  case OP_UNGLUE:
+    return runtime_glue(l);
   case OP_WITNESS:
     return field_of(l, b, v->args[0], 0, out);
   case OP_PAYLOAD:

@@ -1,0 +1,29 @@
+-- The kernel prelude (Q-S2e-1). The checker reads this file before the
+-- domain file. Its names are core names (Q-S2e-5). S3 does not change it.
+
+-- An equivalence of types from Π, Σ and Path only.
+isContr : (A : Type 0) → Type 0
+isContr A = (x : A) × ((y : A) → Path A x y)
+
+fiber : (A : Type 0) → (B : Type 0) → (f : (x : A) → B) → (y : B) → Type 0
+fiber A B f y = (x : A) × Path B (f x) y
+
+isEquiv : (A : Type 0) → (B : Type 0) → (f : (x : A) → B) → Type 0
+isEquiv A B f = (y : B) → isContr (fiber A B f y)
+
+Equiv : (A : Type 0) → (B : Type 0) → Type 0
+Equiv A B = (f : (x : A) → B) × isEquiv A B f
+
+-- The identity equivalence.
+idEquiv : (A : Type 0) → Equiv A A
+idEquiv A = pack (λ x → x) (λ y → pack (pack y refl) (λ z → λ i → pack (payload z (~ i)) (λ j → payload z ((~ i) ∨ j))))
+
+-- Univalence: an equivalence gives a path of types (a Glue line).
+ua : (A : Type 0) → (B : Type 0) → (e : Equiv A B) → Path (Type 0) A B
+ua A B e = λ i → Glue B [ ~ i ↦ pack A e , i ↦ pack B (idEquiv B) ]
+
+-- The transport equivalence along a line of types, backwards: from T i1
+-- to T i0. hcomp at Type 0 is the Glue type with these branches. The
+-- proof transports the proof for the identity along the filler.
+transpEquiv : (T : (i : I) → Type 0) → Equiv (T i1) (T i0)
+transpEquiv T = pack (λ x → transp (λ i → T (~ i)) i0 x) (transp (λ i → isEquiv (T i1) (T (~ i)) (λ x → transp (λ j → T ((~ i) ∨ (~ j))) (~ i) x)) i0 (payload (idEquiv (T i1))))

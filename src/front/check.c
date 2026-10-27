@@ -66,7 +66,10 @@ typedef enum {
   RULE_PARTIAL,
   RULE_SYSTEM,
   RULE_TRANSP,
-  RULE_HCOMP
+  RULE_HCOMP,
+  RULE_GLUE,
+  RULE_GLUE_ELEM,
+  RULE_UNGLUE
 } Rule;
 
 typedef struct {
@@ -98,6 +101,10 @@ static const Builtin BUILTINS[] = {
   /* Kan operations. */
   {"transp", 3, RULE_TRANSP, OP_TRANSP, OP_NAT, 0},
   {"hcomp", 2, RULE_HCOMP, OP_HCOMP, OP_NAT, 0},
+  /* Glue types. */
+  {"Glue", 2, RULE_GLUE, OP_GLUE, OP_NAT, 0},
+  {"glue", 2, RULE_GLUE_ELEM, OP_GLUE_ELEM, OP_NAT, 0},
+  {"unglue", 1, RULE_UNGLUE, OP_UNGLUE, OP_NAT, 0},
   {"PathP", 3, RULE_PATHP, OP_PATHP, OP_NAT, 0},
   {"Path", 3, RULE_PATHP, OP_PATHP, OP_NAT, 1},
   {"unit", 0, RULE_VALUE0, OP_UNIT_VAL, OP_UNIT, 0},
@@ -240,6 +247,15 @@ static const Core *op3(Checker *c, Op op, uint32_t inst, uint32_t n, const Core 
   args[1] = b;
   args[2] = x;
   return core_op(c, op, inst, 0, args, n);
+}
+
+static const Core *op4(Checker *c, Op op, const Core *a, const Core *b, const Core *x, const Core *y) {
+  const Core *args[4];
+  args[0] = a;
+  args[1] = b;
+  args[2] = x;
+  args[3] = y;
+  return core_op(c, op, 0, 0, args, 4u);
 }
 
 static const Value *tyop(Checker *c, Op op, uint32_t n, const Value *a, const Value *b, const Value *x) {
@@ -930,6 +946,25 @@ static int is_system_cell(const Term *t) {
          && t->left->left->left->kind == TERM_VAR && strcmp(t->left->left->left->name, "↦") == 0;
 }
 
+/* The checker environment with the variable of each literal set to i1
+   (level * 2) or i0 (level * 2 + 1). */
+static const Env *face_env(Checker *c, const uint32_t *lits, uint32_t n) {
+  const Env *env = NULL;
+  const Value *v;
+  uint32_t level;
+  uint32_t i;
+  for (level = 0; level < c->level; level++) {
+    v = val_var(c->m, level);
+    for (i = 0; i < n; i++)
+      if (lits[i] / 2u == level)
+        v = op0(c, lits[i] % 2u == 0 ? OP_I1 : OP_I0);
+    env = env_push(c->m, env, v);
+    if (env == NULL)
+      return NULL;
+  }
+  return env;
+}
+
 /* T against WANT with FACE added to the face context. A face with no meet
    (it never holds) adds nothing, so that branch gets the usual checks. */
 static const Core *check_on(Checker *c, const Term *t, const Value *want, const Core *face) {
@@ -1196,6 +1231,213 @@ static const Core *rule_hcomp(Call *k) {
   return core_op(c, OP_HCOMP, 0, 0, args, 4u);
 }
 
+/* The type Sigma (T : Type 0) (Equiv T A) of a Glue branch, from the
+   prelude definition Equiv. The prelude always declares Equiv, so a
+   missing Equiv is a defect (INTERNAL). */
+static const Value *equiv_sigma(Checker *c, const Value *av) {
+  uint32_t d = find_def(c->m, "Equiv");
+  const Core *body;
+  if (d == NO_DEF) {
+    FAIL(c, "INTERNAL", "Glue needs the prelude definition Equiv, which is not declared");
+    return NULL;
+  }
+  body = core_app(c, core_app(c, core_index(c, CORE_GLOBAL, d), core_index(c, CORE_VAR, 0)), quote_value(c->m, c->level + 1u, av));
+  return here(c, core_bind(c, CORE_SIGMA, "T", core_leaf(c, CORE_UNIV, 0), body));
+}
+
+/* 1 when a failure inside a Glue branch keeps its own code. */
+static int glue_keeps(const char *code) {
+  return code == NULL || strcmp(code, "OOM") == 0 || strcmp(code, "INTERNAL") == 0 || strcmp(code, "EVAL_FUEL") == 0
+         || strcmp(code, "EVAL_DEPTH") == 0;
+}
+
+/* A failed Glue branch refails as CODE over the diagnostic state SAVED,
+   with the inner code and message kept in the text. */
+static const Core *glue_refail(Checker *c, const Diag *saved, const char *code) {
+  Diag inner = *c->m->diag;
+  if (glue_keeps(inner.code))
+    return NULL;
+  *c->m->diag = *saved;
+  return nul(FAIL(c, code, "each branch of Glue needs pack T e with e : Equiv T A (%s: %s)", inner.code, inner.msg));
+}
+
+/* A glue branch is checked at T on its face. Use a branch type only when
+   it agrees with the Glue type on the entire face, including when the
+   value and the type use different partitions of the cover. */
+static const Value *glue_branch_hint(Checker *c, const Value *g, const Core *fk) {
+  const Value *face = here(c, fk);
+  const Value *sys;
+  const Value *t;
+  if (face != NULL && c->face != NULL)
+    face = tyop(c, OP_IMIN, 2, c->face, face, NULL);
+  if (face == NULL)
+    return NULL;
+  if (!val_is(g, OP_GLUE) || face_equal(c->m, c->level, face, op0(c, OP_I0)))
+    return g;
+  for (sys = g->args[2]; val_is(sys, OP_SYSTEM); sys = sys->args[2]) {
+    t = here(c, op3(c, OP_WITNESS, 0, 1, quote_value(c->m, c->level, sys->args[1]), NULL, NULL));
+    if (t == NULL)
+      return NULL;
+    if (conv_under_face(c->m, c->level, face, g, t))
+      return t;
+    if (c->m->diag->set)
+      return NULL;
+  }
+  return g;
+}
+
+/* The system [ f ↦ t , ... ] of Glue and glue, with no binder: each face
+   at I, their join to *PHI, each branch against WANT under its face, then
+   the overlaps. The faces go to FK and FV, the branches to UK. A branch
+   that fails refails as WRAP, when WRAP is not NULL. */
+static const Core *glue_system(Checker *c, const Term *t, const char *who, const Value *want, const char *wrap, const Core **phi, const Core **fk, const Value **fv, const Core **uk, uint32_t *n) {
+  const Term *s = t;
+  const Term *branch[CELLS_MAX];
+  const Core *body;
+  Diag saved = *c->m->diag;
+  uint32_t i;
+  uint32_t q;
+  *n = 0;
+  *phi = op3(c, OP_I0, 0, 0, NULL, NULL, NULL);
+  if (!is_system_cell(s) && (s->kind != TERM_VAR || strcmp(s->name, "[]") != 0))
+    return nul(FAIL(c, "TYPE_SYSTEM", "%s needs [ ... ]", who));
+  for (; is_system_cell(s) && *n < CELLS_MAX; s = s->right) {
+    fk[*n] = check(c, s->left->left->right, op0(c, OP_I));
+    if (fk[*n] == NULL)
+      return NULL;
+    fv[*n] = here(c, fk[*n]);
+    if (fv[*n] == NULL)
+      return NULL;
+    branch[*n] = s->left->right;
+    *phi = *n == 0 ? fk[0] : op3(c, OP_IMAX, 0, 2, *phi, fk[*n], NULL);
+    (*n)++;
+  }
+  if (s->kind != TERM_VAR || strcmp(s->name, "[]") != 0)
+    return nul(FAIL(c, "TYPE_SYSTEM", "a system has at most %u cells", (unsigned)CELLS_MAX));
+  for (i = 0; i < *n; i++) {
+    const Value *hint = wrap == NULL ? glue_branch_hint(c, want, fk[i]) : want;
+    uk[i] = hint == NULL ? NULL : check_on(c, branch[i], hint, fk[i]);
+    if (uk[i] == NULL)
+      return wrap == NULL ? NULL : glue_refail(c, &saved, wrap);
+  }
+  for (i = 0; i < *n; i++)
+    for (q = i + 1u; q < *n; q++)
+      if (!cells_agree(c, fk[i], uk[i], fk[q], uk[q]))
+        return NULL;
+  body = op3(c, OP_SYSNIL, 0, 0, NULL, NULL, NULL);
+  for (i = *n; i > 0; i--)
+    body = op3(c, OP_SYSTEM, 0, 3, fk[i - 1u], uk[i - 1u], body);
+  return body;
+}
+
+/* Glue A [ f ↦ pack T e , ... ]: A : Type 0 and each branch is pack T e
+   with e : Equiv T A. The type is Type 0. A branch that fails is
+   GLUE_EQUIV. */
+static const Core *rule_glue(Call *k) {
+  Checker *c = k->c;
+  const Core *fk[CELLS_MAX];
+  const Value *fv[CELLS_MAX];
+  const Core *uk[CELLS_MAX];
+  const Core *phi = NULL;
+  const Core *sys;
+  const Core *a = check(c, k->args[0], val_univ(c->m, 0));
+  const Value *want = a == NULL ? NULL : equiv_sigma(c, here(c, a));
+  uint32_t n = 0;
+  if (want == NULL)
+    return NULL;
+  sys = glue_system(c, k->args[1], "Glue", want, "GLUE_EQUIV", &phi, fk, fv, uk, &n);
+  if (sys == NULL)
+    return NULL;
+  k->type = val_univ(c->m, 0);
+  return op3(c, OP_GLUE, 0, 3, a, phi, sys);
+}
+
+/* glue [ f ↦ t , ... ] a against Glue A sys, in check mode: the faces
+   join to the face of the type (GLUE_COVER), each branch has the type
+   under its face (there Glue A sys is T), a : A, and on each face
+   witness e t is a (GLUE_BOUNDARY). */
+static const Core *rule_glue_elem(Call *k) {
+  Checker *c = k->c;
+  const Value *g = k->hint;
+  const Core *fk[CELLS_MAX];
+  const Value *fv[CELLS_MAX];
+  const Core *uk[CELLS_MAX];
+  const Core *phi = NULL;
+  const Core *sys;
+  const Core *a;
+  const Core *ga;
+  const Core *gphi;
+  const Core *gsys;
+  const Core *gt;
+  const Value *cover;
+  const Value *want_cover;
+  const Value *face;
+  const Core *ung;
+  const Env *env;
+  const Value *uv;
+  const Value *av;
+  FaceMeets fm;
+  uint32_t n = 0;
+  uint32_t i;
+  uint32_t q;
+  if (!val_is(g, OP_GLUE))
+    return need_type(k, "Glue A sys");
+  sys = glue_system(c, k->args[0], "glue", g, NULL, &phi, fk, fv, uk, &n);
+  if (sys == NULL)
+    return NULL;
+  cover = here(c, phi);
+  want_cover = g->args[1];
+  if (c->face != NULL) {
+    cover = tyop(c, OP_IMIN, 2, c->face, cover, NULL);
+    want_cover = tyop(c, OP_IMIN, 2, c->face, want_cover, NULL);
+  }
+  if (cover == NULL || want_cover == NULL)
+    return NULL;
+  if (!face_equal(c->m, c->level, cover, want_cover))
+    return nul(FAIL(c, "GLUE_COVER", "the faces of glue join to %s, but the type needs %s", show(c, here(c, phi)), show(c, g->args[1])));
+  a = check(c, k->args[1], g->args[0]);
+  ga = quote_value(c->m, c->level, g->args[0]);
+  gphi = quote_value(c->m, c->level, g->args[1]);
+  gsys = quote_value(c->m, c->level, g->args[2]);
+  gt = quote_value(c->m, c->level, g);
+  if (a == NULL || ga == NULL || gphi == NULL || gsys == NULL || gt == NULL)
+    return NULL;
+  for (i = 0; i < n; i++) {
+    face = c->face == NULL ? fv[i] : tyop(c, OP_IMIN, 2, c->face, fv[i], NULL);
+    ung = op4(c, OP_UNGLUE, ga, gphi, gsys, uk[i]);
+    if (face == NULL || ung == NULL)
+      return NULL;
+    /* A branch has the Glue type only on its face. Restrict its Core
+       before evaluating unglue, since the branch may itself be a glue. */
+    if (!face_meets(c->m, c->level, face, &fm))
+      return nul(FAIL(c, "TYPE_SYSTEM", "the Glue boundary face %s is not in the face bounds", show(c, face)));
+    for (q = 0; q < fm.count; q++) {
+      env = face_env(c, fm.lit[q], fm.len[q]);
+      uv = env == NULL && c->level > 0 ? NULL : eval_core(c->m, env, ung);
+      av = uv == NULL ? NULL : eval_core(c->m, env, a);
+      if (uv == NULL || av == NULL)
+        return c->m->diag->set ? NULL : nul(FAIL(c, "OOM", "out of memory"));
+      if (!conv_values(c->m, c->level, uv, av))
+        return c->m->diag->set ? NULL : nul(FAIL(c, "GLUE_BOUNDARY", "on the face %s, witness e t is %s but the base is %s", show(c, face), show(c, uv), show(c, av)));
+    }
+  }
+  k->type = g;
+  return op3(c, OP_GLUE_ELEM, 0, 3, gt, sys, a);
+}
+
+/* unglue g: g : Glue A sys, of type A. */
+static const Core *rule_unglue(Call *k) {
+  Checker *c = k->c;
+  const Value *gt = NULL;
+  const Core *g = infer(c, k->args[0], &gt);
+  if (g == NULL)
+    return NULL;
+  if (!val_is(gt, OP_GLUE))
+    return nul(FAIL(c, "UNGLUE_TYPE", "unglue needs a term of a type Glue A sys, found a term of type %s", show(c, gt)));
+  k->type = gt->args[0];
+  return op4(c, OP_UNGLUE, quote_value(c->m, c->level, gt->args[0]), quote_value(c->m, c->level, gt->args[1]), quote_value(c->m, c->level, gt->args[2]), g);
+}
+
 static const Core *rule(Call *k) {
   switch (k->b->rule) {
   case RULE_TYPE0:
@@ -1214,6 +1456,12 @@ static const Core *rule(Call *k) {
     return rule_transp(k);
   case RULE_HCOMP:
     return rule_hcomp(k);
+  case RULE_GLUE:
+    return rule_glue(k);
+  case RULE_GLUE_ELEM:
+    return rule_glue_elem(k);
+  case RULE_UNGLUE:
+    return rule_unglue(k);
   case RULE_TYPE1:
     return rule_type1(k);
   case RULE_FIN:
@@ -1790,6 +2038,8 @@ static const char *name_owner(const Checker *c, const char *name) {
   i = find_def(m, name);
   if (i == NO_DEF)
     return NULL;
+  if (m->defs[i].origin == ORIGIN_PRELUDE)
+    return "a core name";
   return m->defs[i].origin == ORIGIN_DOMAIN ? "a domain definition" : "already defined";
 }
 

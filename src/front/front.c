@@ -3,9 +3,12 @@
 #include "front/front.h"
 
 int front_load(Arena *arena, const char *source, const char *text, size_t len, Front *out, Diag *diag) {
+  TokenList prelude_toks;
   TokenList domain_toks;
   memset(out, 0, sizeof *out);
-  if (!lex_source(arena, "domain/domain.lang", (const char *)domain_source, domain_source_len, &domain_toks, diag)
+  if (!lex_source(arena, "src/front/prelude.lang", (const char *)prelude_source, prelude_source_len, &prelude_toks, diag)
+      || !parse_source(arena, "src/front/prelude.lang", ORIGIN_PRELUDE, &prelude_toks, &out->decls, diag)
+      || !lex_source(arena, "domain/domain.lang", (const char *)domain_source, domain_source_len, &domain_toks, diag)
       || !parse_source(arena, "domain/domain.lang", ORIGIN_DOMAIN, &domain_toks, &out->decls, diag))
     return 0;
   out->domain_count = out->decls.count;

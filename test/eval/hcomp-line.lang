@@ -1,0 +1,11 @@
+-- An hcomp at Type 0 along a line that is not constant (hcomp_univ): the
+-- Glue type has the type at i1 of the line, so hcompEGlue is refl. The
+-- transpEquiv defs use much memory: this file has no other hcomp at Type 0.
+hcompE : (A : Type 0) → (B : Type 0) → (e : Path (Type 0) A B) → (j : I) → Type 0
+hcompE A B e j = hcomp (λ l → [ j ↦ e l ]) A
+
+hcompEGlue : (A : Type 0) → (B : Type 0) → (e : Path (Type 0) A B) → (j : I) → Path (Type 0) (hcompE A B e j) (Glue A [ j ↦ pack B (transpEquiv (λ i → e i)) ])
+hcompEGlue A B e j = refl
+
+hcompEAt1 : Type 0
+hcompEAt1 = hcompE ℕ ℕ (λ i → ℕ) i1

@@ -1,0 +1,13 @@
+-- The check accepts this program, but the state of the fold holds a Glue
+-- value at run time. `langc ir` must refuse it with REFUSE_RUNTIME_GLUE.
+g : (j : I) → Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]
+g j = glue [ j ↦ 5 ] 5
+
+start : (k : ℕ) × Glue ℕ [ i0 ↦ pack ℕ (idEquiv ℕ) ]
+start = pack 0 (g i0)
+
+step : (s : (k : ℕ) × Glue ℕ [ i0 ↦ pack ℕ (idEquiv ℕ) ]) → (k : ℕ) × Glue ℕ [ i0 ↦ pack ℕ (idEquiv ℕ) ]
+step s = pack (natAdd (witness s) 1) (payload s)
+
+bad : (n : ℕ) → ℕ
+bad n = witness (fold step start n)

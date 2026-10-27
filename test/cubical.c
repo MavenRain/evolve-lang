@@ -35,7 +35,7 @@ static int round_trip(const char *label, const char *signature, const char *body
   char normal[16384];
   char again[65536];
   int ok = 0;
-  arena_init(&arena, (size_t)1 << 27);
+  arena_init(&arena, (size_t)1 << 28);
   diag_init(&diag);
   int len = snprintf(source, sizeof source, "value : %s\nvalue = %s\n", signature, body);
   if (len < 0 || (size_t)len >= sizeof source || !load(&arena, source, &machine, &diag)) goto done;
@@ -58,6 +58,24 @@ done:
 
 int main(void) {
   static const struct { const char *label; const char *source; const char *code; } checks[] = {
+    {"Glue pair branch",
+     "value : (A : Type 0) → (e : Equiv ((x : ℕ) × ℕ) A) → (j : I) → Glue A [ j ↦ pack ((x : ℕ) × ℕ) e ]\n"
+     "value A e j = glue [ j ↦ pack 3 7 ] (witness e (pack 3 7))\n", NULL},
+    {"Glue lambda branch",
+     "value : (j : I) → Glue (ℕ → ℕ) [ j ↦ pack (ℕ → ℕ) (idEquiv (ℕ → ℕ)) ]\n"
+     "value j = glue [ j ↦ λ x → x ] (λ x → x)\n", NULL},
+    {"nested Glue branch",
+     "value : (j : I) → Glue (Glue ℕ []) [ j ↦ pack (Glue ℕ []) (idEquiv (Glue ℕ [])) ]\n"
+     "value j = glue [ j ↦ glue [] 7 ] (glue [] 7)\n", NULL},
+    {"Glue pair branch on a join",
+     "value : (j : I) → (k : I) → Glue ((x : ℕ) × ℕ) [ j ∨ k ↦ pack ((x : ℕ) × ℕ) (idEquiv ((x : ℕ) × ℕ)) ]\n"
+     "value j k = glue [ j ∨ k ↦ pack 3 7 ] (pack 3 7)\n", NULL},
+    {"Glue pair branch across partitions",
+     "value : (j : I) → (k : I) → Glue ((x : ℕ) × ℕ) [ j ↦ pack ((x : ℕ) × ℕ) (idEquiv ((x : ℕ) × ℕ)) , k ↦ pack ((x : ℕ) × ℕ) (idEquiv ((x : ℕ) × ℕ)) ]\n"
+     "value j k = glue [ j ∨ k ↦ pack 3 7 ] (pack 3 7)\n", NULL},
+    {"Glue pair boundary mismatch",
+     "value : (j : I) → Glue ((x : ℕ) × ℕ) [ j ↦ pack ((x : ℕ) × ℕ) (idEquiv ((x : ℕ) × ℕ)) ]\n"
+     "value j = glue [ j ↦ pack 3 7 ] (pack 3 8)\n", "GLUE_BOUNDARY"},
     {"indexed cell result scope",
      "data Indexed (A : Type 0) : Path (Type 0) A A → Type where\n"
      "  inject : (a : A) → Indexed A refl\n"
@@ -121,9 +139,41 @@ int main(void) {
     {"Fin value below the bound", "value : Fin 2\nvalue = pack 1 refl\n", NULL},
     {"Fin value at the bound", "value : Fin 2\nvalue = pack 2 refl\n", "TYPE_REFL"},
     {"Fin with a neutral bound", "value : (n : ℕ) → (x : Fin n) → Path Bool (natLe (natAdd (witness x) 1) n) true\nvalue n x = payload x\n",
-     NULL}
+     NULL},
+    {"ua identity transport",
+     "uaNat : Path (Type 0) ℕ ℕ\nuaNat = ua ℕ ℕ (idEquiv ℕ)\n"
+     "value : (n : ℕ) → Path ℕ (transp (λ i → uaNat i) i0 n) n\nvalue n = refl\n", NULL},
+    {"ua swap transport",
+     "swap : (p : (x : ℕ) × ℕ) → (x : ℕ) × ℕ\nswap p = pack (payload p) (witness p)\n"
+     "swapEquiv : Equiv ((x : ℕ) × ℕ) ((x : ℕ) × ℕ)\n"
+     "swapEquiv = pack swap (λ y → pack (pack (swap y) refl) (λ z i → pack (swap (payload z (~ i))) (λ j → payload z (~ i ∨ j))))\n"
+     "uaSwap : Path (Type 0) ((x : ℕ) × ℕ) ((x : ℕ) × ℕ)\nuaSwap = ua ((x : ℕ) × ℕ) ((x : ℕ) × ℕ) swapEquiv\n"
+     "value : (p : (x : ℕ) × ℕ) → Path ((x : ℕ) × ℕ) (transp (λ i → uaSwap i) i0 p) (swap p)\nvalue p = refl\n", NULL},
+    {"ua swap is not the identity",
+     "swap : (p : (x : ℕ) × ℕ) → (x : ℕ) × ℕ\nswap p = pack (payload p) (witness p)\n"
+     "swapEquiv : Equiv ((x : ℕ) × ℕ) ((x : ℕ) × ℕ)\n"
+     "swapEquiv = pack swap (λ y → pack (pack (swap y) refl) (λ z i → pack (swap (payload z (~ i))) (λ j → payload z (~ i ∨ j))))\n"
+     "uaSwap : Path (Type 0) ((x : ℕ) × ℕ) ((x : ℕ) × ℕ)\nuaSwap = ua ((x : ℕ) × ℕ) ((x : ℕ) × ℕ) swapEquiv\n"
+     "value : (p : (x : ℕ) × ℕ) → Path ((x : ℕ) × ℕ) (transp (λ i → uaSwap i) i0 p) p\nvalue p = refl\n", "TYPE_REFL"},
+    {"hcomp at a Glue type",
+     "gl : (j : I) → Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]\ngl j = glue [ j ↦ 7 ] 7\n"
+     "value : (j : I) → Path (Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]) (hcomp (λ l → []) (gl j)) (gl j)\nvalue j = refl\n", NULL},
+    {"Glue eta",
+     "value : (j : I) → (g : Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]) → Path (Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]) (glue [ j ↦ g ] (unglue g)) g\n"
+     "value j g = refl\n", NULL},
+    {"unglue of an hcomp at a Glue type",
+     "gl : (j : I) → (n : ℕ) → Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]\ngl j n = glue [ j ↦ n ] n\n"
+     "value : (j : I) → (k : I) → (n : ℕ) → (p : Path ℕ n n) → Path ℕ (unglue (hcomp (λ l → [ k ↦ glue [ j ↦ p l ] (p l) ]) (gl j n))) (hcomp (λ i → [ j ↦ hcomp (λ l → [ ~ i ↦ n , k ↦ p (i ∧ l) ]) n , k ↦ p i ]) n)\n"
+     "value j k n p = refl\n", NULL},
+    {"ua fiber center not in normal form",
+     "weirdId : Equiv ℕ ℕ\n"
+     "weirdId = pack (λ x → x) (λ y → pack (pack (hcomp (λ l → []) y) (λ k → hcomp (λ l → [ k ↦ y ]) y)) (λ z i → pack (hcomp (λ l → [ i ↦ payload z (~ l) ]) y) (λ k → hcomp (λ l → [ i ↦ payload z (~ l ∨ k) , k ↦ y ]) y)))\n"
+     "uaW : Path (Type 0) ℕ ℕ\nuaW = ua ℕ ℕ weirdId\n"
+     "m1w : (j : I) → (n : ℕ) → ℕ\nm1w j n = hcomp (λ k → [ j ↦ transp (λ i → uaW (i ∧ ~ j)) i0 n ]) n\n", NULL}
   };
   static const struct { const char *label; const char *signature; const char *body; } rounds[] = {
+    {"Glue element", "(j : I) → Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]", "λ j → glue [ j ↦ 7 ] 7"},
+    {"neutral unglue", "(j : I) → (g : Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]) → ℕ", "λ j g → unglue g"},
     {"hcomp", "(p : Path ℕ 0 0) → (i : I) → ℕ", "λ p i → hcomp (λ j → [ i ↦ p j ]) 0"},
     {"Path type", "Type 0", "Path ℕ 0 0"},
     {"varying PathP type", "(e : Path (Type 0) ℕ ℕ) → Type 0", "λ e → PathP (λ (i : I) → e i) 0 0"},

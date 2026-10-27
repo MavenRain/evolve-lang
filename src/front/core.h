@@ -64,6 +64,9 @@ typedef enum {
   OP_TCOD,       /* internal: the codomain of a Pi or Sigma at x: [T, x] */
   OP_HCOMP,      /* hcomp A φ side u0: [A, φ, side, u0] */
   OP_SYSMAP,     /* internal: f on each branch of a system: [f, sys] */
+  OP_GLUE,       /* Glue A [ φ ↦ pack T e , ... ]: [A, φ, sys] */
+  OP_GLUE_ELEM,  /* glue [ φ ↦ t , ... ] a at G = Glue A sys: [G, sys, a] */
+  OP_UNGLUE,     /* unglue g at Glue A sys: [A, φ, sys, g] */
   OP_PCTOR       /* a path constructor: the params, the fields, then one interval for each dimension */
 } Op;
 

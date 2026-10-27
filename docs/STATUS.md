@@ -97,6 +97,8 @@ them to the S1 surface only.
 | `Option`, `none`, `some`, `option`, `pure`, `map`, `bind` | 2.2 CM | admitted |
 | `pack`, `witness`, `payload` | 2.2 ambient Sigma | admitted |
 | `Fin` | 2.2 defined Sigma `Fin n` | S2d added it (Q-S2d-1 (a)): a core name for `(k : ℕ) × Path Bool (natLe (natAdd k 1) n) true`, no new Op |
+| `Glue`, `glue`, `unglue` | 2.2 ambient `Glue` | S2e added them: core formers, 3 new Ops (`OP_GLUE`, `OP_GLUE_ELEM`, `OP_UNGLUE`); the Kan rules transp_glue, hcomp_glue, hcomp_univ and Glue eta (Q-S2e-2 (a)); `langc ir` gives `REFUSE_RUNTIME_GLUE` |
+| `isContr`, `fiber`, `isEquiv`, `Equiv`, `idEquiv`, `ua`, `transpEquiv` | 2.2 ambient `ua` (the others are its helpers) | S2e added them (Q-S2e-1 (a), Q-S2e-5 (a)): the kernel prelude `src/front/prelude.lang`; core names (`REFUSE_NAME`) |
 | `fold` | F6 (the kit recursion) | admitted |
 | `Eq`, `refl`, `symm`, `trans`, `cong`, `transport` | 2.2 `Path` | S2 renames `Eq` to `Path` |
 | `Sum`, `inl`, `inr`, `either` | not in 2.2 (`Either E A` is not admitted) | S2d removed them (Q-S2d-4 (a)): `NAME_UNKNOWN`, hint "use Option or a base sum" |

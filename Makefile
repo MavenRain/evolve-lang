@@ -16,26 +16,30 @@ build: build/langc build/fronttool
 
 build/domain.c: domain/domain.lang gen/embed.c
 	mkdir -p build
-	$(TCC) -run gen/embed.c domain/domain.lang build/domain.c
+	$(TCC) -run gen/embed.c domain/domain.lang build/domain.c domain_source
 
-build/langc: $(SRC) $(HEADERS) build/domain.c
-	$(TCC) $(CFLAGS) -o build/langc $(SRC) build/domain.c
+build/prelude.c: src/front/prelude.lang gen/embed.c
+	mkdir -p build
+	$(TCC) -run gen/embed.c src/front/prelude.lang build/prelude.c prelude_source
+
+build/langc: $(SRC) $(HEADERS) build/domain.c build/prelude.c
+	$(TCC) $(CFLAGS) -o build/langc $(SRC) build/domain.c build/prelude.c
 
 build/fronttool: $(FRONT_TOOL) $(HEADERS)
 	mkdir -p build
 	$(TCC) $(CFLAGS) -o build/fronttool $(FRONT_TOOL)
 
-build/diagnostics: test/diagnostics.c $(SRC) $(HEADERS) build/domain.c
-	$(TCC) $(CFLAGS) -o build/diagnostics test/diagnostics.c $(filter-out src/main.c,$(SRC)) build/domain.c
+build/diagnostics: test/diagnostics.c $(SRC) $(HEADERS) build/domain.c build/prelude.c
+	$(TCC) $(CFLAGS) -o build/diagnostics test/diagnostics.c $(filter-out src/main.c,$(SRC)) build/domain.c build/prelude.c
 
-build/cubical: $(CUBICAL_TOOL) $(HEADERS) build/domain.c
-	$(TCC) $(CFLAGS) -o build/cubical $(CUBICAL_TOOL) build/domain.c
+build/cubical: $(CUBICAL_TOOL) $(HEADERS) build/domain.c build/prelude.c
+	$(TCC) $(CFLAGS) -o build/cubical $(CUBICAL_TOOL) build/domain.c build/prelude.c
 
-check-clang: build/domain.c
-	$(CC) $(CLANG_FLAGS) $(SRC) build/domain.c
+check-clang: build/domain.c build/prelude.c
+	$(CC) $(CLANG_FLAGS) $(SRC) build/domain.c build/prelude.c
 	$(CC) $(CLANG_FLAGS) $(FRONT_TOOL)
-	$(CC) $(CLANG_FLAGS) test/diagnostics.c $(filter-out src/main.c,$(SRC)) build/domain.c
-	$(CC) $(CLANG_FLAGS) $(CUBICAL_TOOL) build/domain.c
+	$(CC) $(CLANG_FLAGS) test/diagnostics.c $(filter-out src/main.c,$(SRC)) build/domain.c build/prelude.c
+	$(CC) $(CLANG_FLAGS) $(CUBICAL_TOOL) build/domain.c build/prelude.c
 
 check: build/langc build/fronttool build/diagnostics build/cubical check-clang
 	sh test/gate.sh

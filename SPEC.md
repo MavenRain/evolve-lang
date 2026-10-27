@@ -82,6 +82,18 @@ or general recursion. Recursion comes only from
 not `Fin n`. S2d removed the kit names `Sum`, `inl`, `inr` and `either`:
 they give `NAME_UNKNOWN` with the hint "use Option or a base sum".
 
+`Glue`, `glue` and `unglue` are core formers (S2e).
+`Glue A [ φ ↦ pack T e , ... ]` is a type: on each face, `e` is an
+`Equiv T A`. `glue [ φ ↦ t , ... ] a` is a term of a Glue type, and
+`unglue g` gives the `A` part of `g`. The kernel prelude
+`src/front/prelude.lang` defines `isContr`, `fiber`, `isEquiv`, `Equiv`,
+`idEquiv`, `ua` and `transpEquiv`. The checker reads it before the domain
+file. Its names are core names: a declaration of one gives `REFUSE_NAME`.
+`ua A B e` is a `Path (Type 0) A B`. The Kan rules transp_glue,
+hcomp_glue and hcomp_univ (hcomp at `Type 0`) compute transport and
+composition at these types. `langc ir` refuses a Glue value at run time
+(`REFUSE_RUNTIME_GLUE`).
+
 ### 2.2 Grammar
 
 `×` binds tighter than `→`. Both nest to the right.

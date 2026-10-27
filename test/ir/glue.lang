@@ -1,0 +1,5 @@
+-- A transport along ua computes, so `langc ir` lowers this program: the run
+-- time sees only the result. In test/ir/glue-value.lang a Glue value must
+-- exist at run time, and `langc ir` refuses it with REFUSE_RUNTIME_GLUE.
+moved : (n : ℕ) → ℕ
+moved n = transp (λ i → ua ℕ ℕ (idEquiv ℕ) i) i0 n

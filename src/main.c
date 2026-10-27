@@ -166,7 +166,7 @@ static int run(const Options *opt, Arena *arena, Diag *diag) {
 
 /* The span of declaration D. A domain declaration is in domain/domain.lang. */
 static Span decl_span(const char *path, const Decl *d) {
-  Span span = {d->origin == ORIGIN_DOMAIN ? "domain/domain.lang" : path, d->line, d->col, d->end_line, d->end_col};
+  Span span = {d->origin == ORIGIN_PRELUDE ? "src/front/prelude.lang" : d->origin == ORIGIN_DOMAIN ? "domain/domain.lang" : path, d->line, d->col, d->end_line, d->end_col};
   return span;
 }
 

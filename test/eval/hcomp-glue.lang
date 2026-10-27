@@ -1,0 +1,14 @@
+-- An hcomp at Type 0 is a Glue type (hcomp_univ). Its elements are glue
+-- values, and unglue gives the base element back. The transpEquiv defs
+-- use much memory: this file has no other hcomp at Type 0.
+hcompU : (j : I) → Type 0
+hcompU j = hcomp (λ l → [ j ↦ ℕ ]) ℕ
+
+hcompUElem : (j : I) → hcompU j
+hcompUElem j = glue [ j ↦ 3 ] 3
+
+hcompUNat : (j : I) → ℕ
+hcompUNat j = unglue (hcompUElem j)
+
+hcompUAt0 : ℕ
+hcompUAt0 = hcompUNat i0
