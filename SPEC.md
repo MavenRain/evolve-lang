@@ -76,6 +76,12 @@ name, the reserved word `Text` or a name that is already declared
 or general recursion. Recursion comes only from
 `fold` (F6). The compiler writes the target; a program cannot.
 
+`Fin` is a core name (S2d). `Fin n` is the Sigma
+`(k : ℕ) × Path Bool (natLe (natAdd k 1) n) true`. A term of `Fin n` is
+`pack k refl`, and `witness x` gives the `ℕ`. A message prints the Sigma,
+not `Fin n`. S2d removed the kit names `Sum`, `inl`, `inr` and `either`:
+they give `NAME_UNKNOWN` with the hint "use Option or a base sum".
+
 ### 2.2 Grammar
 
 `×` binds tighter than `→`. Both nest to the right.

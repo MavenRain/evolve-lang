@@ -9,12 +9,12 @@
 #define VARIES 0xffu
 
 static const char *const OP_NAMES[] = {
-  [OP_NAT] = "Nat", [OP_BOOL] = "Bool", [OP_UNIT] = "Unit", [OP_SUM] = "Sum",
+  [OP_NAT] = "ℕ", [OP_BOOL] = "Bool", [OP_UNIT] = "Unit",
   [OP_OPTION] = "Option", [OP_FAMILY] = "?",
   [OP_UNIT_VAL] = "unit", [OP_TRUE] = "true", [OP_FALSE] = "false",
-  [OP_INL] = "inl", [OP_INR] = "inr", [OP_NONE] = "none", [OP_SOME] = "some",
+  [OP_NONE] = "none", [OP_SOME] = "some",
   [OP_PACK] = "pack", [OP_CTOR] = "?",
-  [OP_EITHER] = "either", [OP_OPTION_ELIM] = "option", [OP_PURE] = "pure",
+  [OP_OPTION_ELIM] = "option", [OP_PURE] = "pure",
   [OP_MAP] = "map", [OP_BIND] = "bind", [OP_FOLD_NAT] = "fold",
   [OP_FOLD_FAMILY] = "fold", [OP_WITNESS] = "witness", [OP_PAYLOAD] = "payload",
   [OP_NAT_ADD] = "natAdd", [OP_NAT_SUB] = "natSub",
@@ -31,10 +31,10 @@ static const char *const OP_NAMES[] = {
 /* The number of arguments of each operation. VARIES: it comes from the
    family tables. */
 static const unsigned char OP_ARITY[] = {
-  [OP_NAT] = 0, [OP_BOOL] = 0, [OP_UNIT] = 0, [OP_SUM] = 2, [OP_OPTION] = 1,
+  [OP_NAT] = 0, [OP_BOOL] = 0, [OP_UNIT] = 0, [OP_OPTION] = 1,
   [OP_FAMILY] = VARIES, [OP_UNIT_VAL] = 0, [OP_TRUE] = 0,
-  [OP_FALSE] = 0, [OP_INL] = 1, [OP_INR] = 1, [OP_NONE] = 0, [OP_SOME] = 1,
-  [OP_PACK] = 2, [OP_CTOR] = VARIES, [OP_EITHER] = 3,
+  [OP_FALSE] = 0, [OP_NONE] = 0, [OP_SOME] = 1,
+  [OP_PACK] = 2, [OP_CTOR] = VARIES,
   [OP_OPTION_ELIM] = 3, [OP_PURE] = 1, [OP_MAP] = 2, [OP_BIND] = 2,
   [OP_FOLD_NAT] = 3, [OP_FOLD_FAMILY] = VARIES, [OP_WITNESS] = 1,
   [OP_PAYLOAD] = 1, [OP_NAT_ADD] = 2, [OP_NAT_SUB] = 2, [OP_NAT_MUL] = 2,
@@ -311,17 +311,6 @@ static const Value *reduce_part(Machine *m, Op op, const Value *const *a, uint32
   return a[0]->args[index];
 }
 
-static const Value *reduce_either(Machine *m, const Value *const *a, uint32_t n) {
-  const Value *out;
-  if (blocked(m, a[2], OP_EITHER, 0, 0, a, n, &out))
-    return out;
-  if (val_is(a[2], OP_INL))
-    return apply_value(m, a[0], a[2]->args[0]);
-  if (val_is(a[2], OP_INR))
-    return apply_value(m, a[1], a[2]->args[0]);
-  return internal(m, "an either of a value that is not a Sum");
-}
-
 static const Value *reduce_option(Machine *m, const Value *const *a, uint32_t n) {
   const Value *out;
   if (blocked(m, a[2], OP_OPTION_ELIM, 0, 0, a, n, &out))
@@ -337,8 +326,6 @@ static const Value *reduce_pure(Machine *m, uint32_t inst, const Value *x) {
   switch ((Carrier)inst) {
   case CARRIER_OPTION:
     return make(m, VAL_OP, OP_SOME, 0, 1, x, NULL, NULL);
-  case CARRIER_SUM:
-    return make(m, VAL_OP, OP_INR, 0, 1, x, NULL, NULL);
   }
   return internal(m, "an unknown carrier");
 }
@@ -351,8 +338,6 @@ static const Value *reduce_map(Machine *m, uint32_t inst, const Value *const *a,
   switch ((Carrier)inst) {
   case CARRIER_OPTION:
     return val_is(x, OP_SOME) ? make(m, VAL_OP, OP_SOME, 0, 1, apply_value(m, a[0], x->args[0]), NULL, NULL) : x;
-  case CARRIER_SUM:
-    return val_is(x, OP_INR) ? make(m, VAL_OP, OP_INR, 0, 1, apply_value(m, a[0], x->args[0]), NULL, NULL) : x;
   }
   return internal(m, "an unknown carrier");
 }
@@ -365,8 +350,6 @@ static const Value *reduce_bind(Machine *m, uint32_t inst, const Value *const *a
   switch ((Carrier)inst) {
   case CARRIER_OPTION:
     return val_is(x, OP_SOME) ? apply_value(m, a[1], x->args[0]) : x;
-  case CARRIER_SUM:
-    return val_is(x, OP_INR) ? apply_value(m, a[1], x->args[0]) : x;
   }
   return internal(m, "an unknown carrier");
 }
@@ -1119,15 +1102,11 @@ static const Value *transp_ctor(Machine *m, const Value *const *a, uint32_t n) {
   case OP_NONE:
     return u;
   case OP_SOME:
-  case OP_INL:
     return tmpl_run(m, tmpl_ctor(m, u, 1u, 0), vals, 3u);
-  case OP_INR:
-    return tmpl_run(m, tmpl_ctor(m, u, 2u, 0), vals, 3u);
   /* Family params that vary need a neutral transport. */
   case OP_NAT:
   case OP_BOOL:
   case OP_UNIT:
-  case OP_SUM:
   case OP_OPTION:
   case OP_FAMILY:
   case OP_UNIT_VAL:
@@ -1136,7 +1115,6 @@ static const Value *transp_ctor(Machine *m, const Value *const *a, uint32_t n) {
   case OP_PACK:
   case OP_CTOR:
   case OP_PCTOR:
-  case OP_EITHER:
   case OP_OPTION_ELIM:
   case OP_PURE:
   case OP_MAP:
@@ -1267,7 +1245,6 @@ static const Value *transp_op(Machine *m, const Value *h, const Value *const *a,
   case OP_UNIT:
     return a[2];
   case OP_OPTION:
-  case OP_SUM:
   case OP_FAMILY:
     return transp_data(m, h, a, n);
   case OP_PATHP:
@@ -1276,14 +1253,11 @@ static const Value *transp_op(Machine *m, const Value *h, const Value *const *a,
   case OP_UNIT_VAL:
   case OP_TRUE:
   case OP_FALSE:
-  case OP_INL:
-  case OP_INR:
   case OP_NONE:
   case OP_SOME:
   case OP_PACK:
   case OP_CTOR:
   case OP_PCTOR:
-  case OP_EITHER:
   case OP_OPTION_ELIM:
   case OP_PURE:
   case OP_MAP:
@@ -1442,7 +1416,6 @@ static const Value *hcomp_op(Machine *m, const Value *const *a, uint32_t n) {
   case OP_BOOL:
   case OP_UNIT:
   case OP_OPTION:
-  case OP_SUM:
   case OP_FAMILY:
     return hcomp_data(m, a, n);
   case OP_PATHP:
@@ -1451,14 +1424,11 @@ static const Value *hcomp_op(Machine *m, const Value *const *a, uint32_t n) {
   case OP_UNIT_VAL:
   case OP_TRUE:
   case OP_FALSE:
-  case OP_INL:
-  case OP_INR:
   case OP_NONE:
   case OP_SOME:
   case OP_PACK:
   case OP_CTOR:
   case OP_PCTOR:
-  case OP_EITHER:
   case OP_OPTION_ELIM:
   case OP_PURE:
   case OP_MAP:
@@ -1708,14 +1678,11 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
   case OP_NAT:
   case OP_BOOL:
   case OP_UNIT:
-  case OP_SUM:
   case OP_OPTION:
   case OP_FAMILY:
   case OP_UNIT_VAL:
   case OP_TRUE:
   case OP_FALSE:
-  case OP_INL:
-  case OP_INR:
   case OP_NONE:
   case OP_SOME:
   case OP_PACK:
@@ -1753,8 +1720,6 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
     return reduce_part(m, op, a, n, OP_PACK, 0);
   case OP_PAYLOAD:
     return reduce_part(m, op, a, n, OP_PACK, 1);
-  case OP_EITHER:
-    return reduce_either(m, a, n);
   case OP_OPTION_ELIM:
     return reduce_option(m, a, n);
   case OP_PURE:
@@ -2124,6 +2089,8 @@ static int name_used(const Printer *p, const char *name) {
   for (i = 0; i < sizeof OP_NAMES / sizeof OP_NAMES[0]; i++)
     if (strcmp(name, OP_NAMES[i]) == 0)
       return 1;
+  if (strcmp(name, "Nat") == 0)
+    return 1; /* the lexer reads `ℕ` as Nat (tok_core_text) */
   for (i = 0; i < p->m->def_count; i++)
     if (strcmp(name, p->m->defs[i].name) == 0)
       return 1;
@@ -2141,20 +2108,60 @@ static int name_used(const Printer *p, const char *name) {
   return 0;
 }
 
+/* 1 when the variable at LEVEL occurs in V. NEXT is the first free level.
+   Too deep to tell gives 1, so the printer keeps the binder. */
+static int mentions(Machine *m, const Value *v, uint64_t level, uint32_t next, unsigned depth) {
+  uint32_t i;
+  if (depth >= PRINT_DEPTH_MAX)
+    return 1;
+  if (v == NULL)
+    return 0;
+  switch (v->kind) {
+  case VAL_VAR:
+    return v->nat == level;
+  case VAL_NAT:
+  case VAL_TRAP:
+  case VAL_UNIV:
+    return 0;
+  case VAL_APP:
+    return mentions(m, v->dom, level, next, depth + 1u) || mentions(m, v->arg, level, next, depth + 1u);
+  case VAL_LAM:
+  case VAL_PI:
+  case VAL_SIGMA:
+    return mentions(m, v->dom, level, next, depth + 1u)
+        || mentions(m, closure_apply(m, v, val_var(m, next)), level, next + 1u, depth + 1u);
+  case VAL_OP:
+  case VAL_STUCK:
+    for (i = 0; i < v->argc; i++)
+      if (mentions(m, v->args[i], level, next, depth + 1u))
+        return 1;
+    return 0;
+  }
+  return 0;
+}
+
+/* `λ x → t`, `λ (x : A) → t`, `(x : A) → B`, `A → B`, `(x : A) × B`, and
+   `A × B` for a Sigma whose B does not use x. The body of `×` is not a λ
+   or a Π (parse_prod), so it gets parentheses. As in fmt.c, a Sigma or a
+   universe in the domain of `→` and a universe left of `×` get no
+   parentheses. */
 static void print_binder(Printer *p, const Value *v) {
   uint32_t level = p->name_count + p->extra_count;
   const char *name = v->name != NULL ? v->name : "x";
   char fresh[32];
   uint32_t suffix = 0;
   const Value *body = closure_apply(p->m, v, val_var(p->m, level));
-  int binder_dom = v->dom != NULL && (v->dom->kind == VAL_PI || v->dom->kind == VAL_SIGMA || v->dom->kind == VAL_LAM || v->dom->kind == VAL_UNIV);
+  int binder_dom = v->dom != NULL && (v->dom->kind == VAL_PI || v->dom->kind == VAL_LAM
+      || (v->kind == VAL_SIGMA && v->dom->kind == VAL_SIGMA));
+  int binder_body = v->kind == VAL_SIGMA && body != NULL && (body->kind == VAL_PI || body->kind == VAL_LAM);
+  int times = v->kind == VAL_SIGMA && !mentions(p->m, body, level, level + 1u, 0);
   while (name_used(p, name)) {
     snprintf(fresh, sizeof fresh, "_x%u", suffix++);
     name = fresh;
   }
   switch (v->kind) {
   case VAL_LAM:
-    put(p, "fun ");
+    put(p, "λ ");
     if (v->dom != NULL)
       put(p, "(");
     put(p, name);
@@ -2163,26 +2170,31 @@ static void print_binder(Printer *p, const Value *v) {
       print_value(p, v->dom, 0);
       put(p, ")");
     }
-    put(p, " => ");
+    put(p, " → ");
     break;
   case VAL_PI:
     if (v->name == NULL) {
       print_value(p, v->dom, binder_dom);
-      put(p, " -> ");
+      put(p, " → ");
       break;
     }
     put(p, "(");
     put(p, name);
     put(p, " : ");
     print_value(p, v->dom, 0);
-    put(p, ") -> ");
+    put(p, ") → ");
     break;
   case VAL_SIGMA:
-    put(p, "Sigma (");
+    if (times) {
+      print_value(p, v->dom, binder_dom);
+      put(p, " × ");
+      break;
+    }
+    put(p, "(");
     put(p, name);
     put(p, " : ");
     print_value(p, v->dom, 0);
-    put(p, ") ");
+    put(p, ") × ");
     break;
   case VAL_NAT:
   case VAL_TRAP:
@@ -2196,7 +2208,7 @@ static void print_binder(Printer *p, const Value *v) {
   if (p->extra_count < PRINT_NAMES_MAX)
     p->extra[p->extra_count] = name;
   p->extra_count++;
-  print_value(p, body, v->kind == VAL_SIGMA);
+  print_value(p, body, binder_body);
   p->extra_count--;
 }
 

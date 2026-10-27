@@ -40,28 +40,28 @@ awk 'BEGIN {
   print " = u69"
 }' >"$tmp/binders.lang"
 awk 'BEGIN {
-  for (i = 0; i < 70; i++) printf "fun u%d => ", i;
+  for (i = 0; i < 70; i++) printf "λ u%d → ", i;
   print "u69"
 }' >"$tmp/want"
 build/langc eval "$tmp/binders.lang" value >"$tmp/got"
 cmp "$tmp/want" "$tmp/got"
 
-# bind preserves a Sum error and can change the success type.
-cat >"$tmp/sum.lang" <<'EOF'
-input : Sum ℕ ℕ
-input = inl 7
+# bind keeps an absent value and can change the success type.
+cat >"$tmp/option.lang" <<'EOF'
+input : Option ℕ
+input = none
 
-output : Sum ℕ Bool
-output = bind input (λ x → inr true)
+output : Option Bool
+output = bind input (λ x → some true)
 
-right : Sum ℕ ℕ
-right = inr 7
+present : Option ℕ
+present = some 7
 
-mapped : Sum ℕ Bool
-mapped = bind right (λ x → inr true)
+mapped : Option Bool
+mapped = bind present (λ x → some true)
 EOF
-test "$(build/langc eval "$tmp/sum.lang" output)" = 'inl 7'
-test "$(build/langc eval "$tmp/sum.lang" mapped)" = 'inr true'
+test "$(build/langc eval "$tmp/option.lang" output)" = 'none'
+test "$(build/langc eval "$tmp/option.lang" mapped)" = 'some true'
 # A truncated normal form must not be reported as successful evaluation.
 printf 'value : Stack\nvalue = fold (λ (s : Stack) → push 0 s) bottom 10000\n' >"$tmp/large.lang"
 status=0

@@ -21,19 +21,15 @@ typedef enum {
   OP_NAT,
   OP_BOOL,
   OP_UNIT,
-  OP_SUM,
   OP_OPTION,
   OP_FAMILY,
   OP_UNIT_VAL,
   OP_TRUE,
   OP_FALSE,
-  OP_INL,
-  OP_INR,
   OP_NONE,
   OP_SOME,
   OP_PACK,
   OP_CTOR,
-  OP_EITHER,
   OP_OPTION_ELIM,
   OP_PURE,
   OP_MAP,
@@ -73,8 +69,7 @@ typedef enum {
 
 /* The instance of pure, map and bind (former F5). */
 typedef enum {
-  CARRIER_OPTION,
-  CARRIER_SUM
+  CARRIER_OPTION
 } Carrier;
 
 typedef enum {

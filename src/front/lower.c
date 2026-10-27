@@ -636,7 +636,6 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_NAT:
   case OP_BOOL:
   case OP_UNIT:
-  case OP_SUM:
   case OP_OPTION:
   case OP_FAMILY:
   case OP_UNIT_VAL:
@@ -667,16 +666,12 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
     return give(l, out, 1, 0);
   case OP_PACK:
     return ctor_full(l, b, v, 0, 2, 0, out);
-  case OP_INL:
-    return ctor_full(l, b, v, 0, 1, 0, out);
-  case OP_INR:
   case OP_SOME:
     return ctor_full(l, b, v, 0, 1, 1, out);
   case OP_NONE:
     return ctor_full(l, b, v, 0, 0, 0, out);
   case OP_CTOR:
     return lower_ctor(l, b, v, out);
-  case OP_EITHER:
   case OP_OPTION_ELIM:
   case OP_PURE:
   case OP_MAP:
@@ -993,14 +988,11 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_NAT:
   case OP_BOOL:
   case OP_UNIT:
-  case OP_SUM:
   case OP_OPTION:
   case OP_FAMILY:
   case OP_UNIT_VAL:
   case OP_TRUE:
   case OP_FALSE:
-  case OP_INL:
-  case OP_INR:
   case OP_NONE:
   case OP_SOME:
   case OP_PACK:
@@ -1034,8 +1026,6 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
     return field_of(l, b, v->args[0], 1, out);
   case OP_PROJ:
     return field_of(l, b, v->args[0], v->field, out);
-  case OP_EITHER:
-    return two_cases(l, b, v, 1, out);
   case OP_OPTION_ELIM:
     return two_cases(l, b, v, 0, out);
   case OP_MAP:

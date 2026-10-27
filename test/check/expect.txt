@@ -17,6 +17,9 @@ bare-fun.lang TYPE_INFER
 arity.lang TYPE_ARITY
 not-function.lang TYPE_NOT_FUNCTION
 eq.lang NAME_UNKNOWN
+sum.lang NAME_UNKNOWN unknown name Sum (S2d removed it); use Option or a base sum
+fin-bound.lang TYPE_REFL the left side normalizes to false, the right side normalizes to true
+fin-empty.lang TYPE_REFL the left side normalizes to false, the right side normalizes to true
 system-disagree.lang TYPE_SYSTEM
 transp-const.lang TYPE_LINE
 transp-face.lang TYPE_LINE

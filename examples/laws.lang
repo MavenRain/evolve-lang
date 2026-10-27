@@ -1,6 +1,6 @@
 -- Laws that the checker proves by normalization: each proof is refl.
-leftFour : Sum ℕ ℕ
-leftFour = inl 4
+leftFour : Option ℕ
+leftFour = some 4
 
 packed : ℕ × Bool
 packed = pack 3 true
@@ -20,8 +20,8 @@ rightUnit = refl
 firstPair : Path ℕ (witness packed) 3
 firstPair = refl
 
-eitherLeft : Path ℕ (either (λ (n : ℕ) → n) (λ (n : ℕ) → natAdd n 1) leftFour) 4
-eitherLeft = refl
+optionSome : Path ℕ (option 0 (λ (n : ℕ) → n) leftFour) 4
+optionSome = refl
 
 subFloor : Path ℕ (natSub 3 5) 0
 subFloor = refl

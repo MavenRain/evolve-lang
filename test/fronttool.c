@@ -143,11 +143,12 @@ int main(int argc, char **argv) {
   ok &= domain("data F : Type where\n  makeF : (makeF : ℕ) → F", "REFUSE_NAME");
   ok &= domain("data F : Type where\n  makeF : (firstField : ℕ) → (secondField : Bool) → F", NULL);
   ok &= domain("data F : Type where\n  a : (field : ℕ) → F\n  b : (field : ℕ) → F", "REFUSE_NAME");
-  ok &= domain("s : Sum ℕ ℕ\ns = inl 7\n\nbad : Sum Bool ℕ\nbad = bind s (λ x → inr x)", "TYPE_MISMATCH");
+  ok &= domain("s : Option ℕ\ns = some 7\n\nbad : ℕ\nbad = bind s (λ x → x)", "TYPE_MISMATCH");
   ok &= domain("data Lot (n : ℕ) : Type where\n  makeLot : (amount : ℕ) → Lot n\n\n"
-               "s : Sum ℕ ℕ\ns = inl 0\n\n"
+               "s : Option ℕ\ns = some 0\n\n"
                "f : (n : ℕ) → ℕ → Lot n\nf n x = makeLot n x\n\n"
-               "bad : (n : ℕ) → Lot n\nbad = either f f s", "TYPE_MISMATCH");
+               "g : (n : ℕ) → Lot n\ng n = makeLot n 0\n\n"
+               "bad : (n : ℕ) → Lot n\nbad = option g f s", "TYPE_MISMATCH");
   ok &= domain("bad : Type 1\nbad = ℕ", "TYPE_MISMATCH");
   ok &= domain("bad : Type 2\nbad = Type 1", "TYPE_UNIVERSE");
   ok &= domain("data U : Type where\n  makeU : (decode : Type 0) → U\n\nbad : Type 0\nbad = U", "TYPE_MISMATCH");

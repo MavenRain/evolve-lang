@@ -96,10 +96,11 @@ them to the S1 surface only.
 | `Bool`, `true`, `false`, `ℕ`, `natAdd`, `natSub`, `natMul`, `natEq`, `natLe` | 3.2 base (kit) | admitted |
 | `Option`, `none`, `some`, `option`, `pure`, `map`, `bind` | 2.2 CM | admitted |
 | `pack`, `witness`, `payload` | 2.2 ambient Sigma | admitted |
+| `Fin` | 2.2 defined Sigma `Fin n` | S2d added it (Q-S2d-1 (a)): a core name for `(k : ℕ) × Path Bool (natLe (natAdd k 1) n) true`, no new Op |
 | `fold` | F6 (the kit recursion) | admitted |
 | `Eq`, `refl`, `symm`, `trans`, `cong`, `transport` | 2.2 `Path` | S2 renames `Eq` to `Path` |
-| `Sum`, `inl`, `inr`, `either` | not in 2.2 (`Either E A` is not admitted) | stays; S2 decides (O12) |
-| `Unit`, `unit` | not in 2.2 | stays; S2 decides (O12) |
+| `Sum`, `inl`, `inr`, `either` | not in 2.2 (`Either E A` is not admitted) | S2d removed them (Q-S2d-4 (a)): `NAME_UNKNOWN`, hint "use Option or a base sum" |
+| `Unit`, `unit` | PLAN 2.1 ambient | stays (Q-S2d-5 (a)) |
 | `flagIf` | kit name | stays (O13) |
 | `Text` | 3.3 strings refused | reserved |
 | `nil` | 3.2 `Chain` constructor (S3) | refused as a dropped kit name; S3 admits it again (O16) |
@@ -122,12 +123,13 @@ them to the S1 surface only.
 - O11: a `let` form. Open.
 - O12: the kit `Sum` and `Unit` formers stay in S1. `Either` is not
   admitted (PLAN 2.2). S2 drops or keeps them with the `REFUSE_CELL`
-  review.
+  review. S2d closed O12: it removed `Sum`, `inl`, `inr`, `either`
+  (Q-S2d-4 (a)) and kept `Unit`, `unit` (Q-S2d-5 (a)).
 - O13: `flagIf` keeps its kit name (it is not in the S1 drop list). The
   USER rules the name of `if`.
 - O14: dead core paths. The Op values and the eval and lowering code for
   `List`, `Prod`, `filter` and `unfold` stay, but no program reaches them.
-  S2 removes them.
+  S2 removes them. S2d closed O14 (Q-S2d-7 (a)): see the S2d Op values.
 - O15: the value printer and some check messages use the ASCII kit
   spelling (`->`, `fun x =>`, `Sigma (x : A) B`, `Nat`). The parser reads
   it back through the aliases.
@@ -368,7 +370,136 @@ observations of plain and labelled fields with different state steps.
 ### Open items from S2c
 - `StreamBisim` goes to S3 (Q-S2c-5 (a)).
 - S3 decides the domain place of `Stream` (Q-S2c-2 (a)).
-- F-U4-1 is open: 7 FAIL sites of cocell_shape give the texts of the 13
-  survey branches (PLAN section 11).
+- F-U4-1 is RULED (a), no work: 7 FAIL sites of cocell_shape give the
+  texts of the 13 survey branches, and the S2c texts stay (PLAN section
+  11).
 - Q-S2c-1 to Q-S2c-8 are RULED (a). Q-S2b-1 to Q-S2b-8 stay open (PLAN
   section 11).
+
+## S2d: kernel part 4 (`Fin n`, O12, the rest of O14, O15)
+
+### Op values
+
+47 Op values (51 before S2d). U2 removed `OP_SUM`, `OP_INL`, `OP_INR`
+and `OP_EITHER` (Q-S2d-4 (a)). The table (Q-S2d-7 (a)) names one
+program that reaches each Op: its checked Core or its evaluation holds
+the Op. 46 of 47 Ops are reached.
+
+| Op | Surface | Program |
+|---|---|---|
+| OP_NAT | `ℕ` | examples/entries.lang:2 |
+| OP_BOOL | `Bool` | examples/entries.lang:11 |
+| OP_UNIT | `Unit` | test/review.sh:11 (heredoc program; also test/cubical.c:78) |
+| OP_OPTION | `Option ℕ` | examples/formers.lang:20 |
+| OP_FAMILY | a domain data type used as a type (`Item`) | examples/inventory.lang:2 |
+| OP_UNIT_VAL | `unit` | test/review.sh:15 (also test/cubical.c:78) |
+| OP_TRUE | `true` | examples/formers.lang:6 |
+| OP_FALSE | `false` | examples/monad.lang:15 |
+| OP_NONE | `none` | examples/formers.lang:27 |
+| OP_SOME | `some` | examples/formers.lang:21 |
+| OP_PACK | `pack` | examples/formers.lang:6 |
+| OP_CTOR | a data constructor (`makeItem`, `red`) | examples/inventory.lang:3 |
+| OP_OPTION_ELIM | `option` | examples/formers.lang:24 |
+| OP_PURE | `pure` | examples/monad.lang:9 |
+| OP_MAP | `map` | examples/monad.lang:3 |
+| OP_BIND | `bind` | examples/monad.lang:6 |
+| OP_FOLD_NAT | `fold` over ℕ | examples/algebra.lang:3 |
+| OP_FOLD_FAMILY | `fold` over a data type | examples/algebra.lang:6 |
+| OP_WITNESS | `witness` | examples/formers.lang:9 |
+| OP_PAYLOAD | `payload` | examples/formers.lang:12 |
+| OP_NAT_ADD | `natAdd` | examples/entries.lang:3 |
+| OP_NAT_SUB | `natSub` | examples/entries.lang:9 |
+| OP_NAT_MUL | `natMul` | examples/entries.lang:6 |
+| OP_NAT_EQ | `natEq` | examples/entries.lang:29 |
+| OP_NAT_LE | `natLe` | examples/entries.lang:12 |
+| OP_FLAG_IF | `flagIf` | examples/entries.lang:18 |
+| OP_PROJ | a constructor field projection (`lotPrice`) | examples/inventory.lang:27 |
+| OP_SSET | no surface name; the sort of `I` and `Partial` (V only, built by op0 in check.c; never a Core node) | test/eval/path.lang:10 |
+| OP_I | `I` | test/eval/path.lang:10 |
+| OP_I0 | `i0` | examples/equality.lang:27 |
+| OP_I1 | `i1` | test/eval/path.lang:8 |
+| OP_PATHP | `PathP` / `Path` | examples/equality.lang:8 |
+| OP_PLAM | path lambda (`refl`, `λ i`) | examples/equality.lang:9 |
+| OP_PAPP | path application `p r` | test/eval/path.lang:8 |
+| OP_INEG | `~` | test/eval/path.lang:41 |
+| OP_IMIN | `∧` | test/eval/path.lang:50 |
+| OP_IMAX | `∨` | test/eval/path.lang:53 |
+| OP_PARTIAL | `Partial` | test/eval/path.lang:61 |
+| OP_SYSTEM | `[ φ ↦ u , ... ]` | test/eval/path.lang:62 |
+| OP_SYSNIL | `[]` | test/eval/path.lang:65 |
+| OP_FROMPARTIAL | none (see Not reached) | NOT REACHED |
+| OP_TRANSP | `transp` | test/eval/path.lang:73 |
+| OP_TPART | internal; template op run by `hcomp` over Sigma | test/eval/path.lang:99 (via `langc eval test/eval/path.lang hSig`; also :102 tPath) |
+| OP_TCOD | internal; template op run by `hcomp` over Sigma | test/eval/path.lang:99 (via `langc eval test/eval/path.lang hSig`) |
+| OP_HCOMP | `hcomp` | test/eval/path.lang:93 |
+| OP_SYSMAP | internal; template op run by `hcomp` over Sigma or a path | test/eval/path.lang:99 (via `langc eval ... hSig`; also :102 tPath) |
+| OP_PCTOR | path constructor application (`squash`) | test/eval/cells.lang:13 |
+
+`OP_FROMPARTIAL` is not reached. `check.c` does not build it. `eval.c`
+builds it only in `reduce_from_partial`, for an `hcomp` with a holding
+face when the side at `i1` is not a system with a holding first face. No
+program in `examples` or `test` reaches that branch. The Op stays, listed
+as unreached (F-U2-2, RULED (a)).
+
+### `Fin n` (U3)
+
+`Fin` is a builtin with no Op (the Op count stays 47). The check gives
+`Fin n` the Core `(k : ℕ) × Path Bool (natLe (natAdd k 1) n) true`
+(Q-S2d-1 (a), Q-S2d-2 (a)). A value is `pack k refl`, and `witness`
+gives `k`. Messages print the Sigma.
+
+| Program | Result |
+|---|---|
+| test/eval/fin.lang `two` (`pack 2 refl : Fin 3`) | `pack 2 (λ i → true)` |
+| test/eval/fin.lang `first` (`pack 0 refl : Fin 1`) | `pack 0 (λ i → true)` |
+| test/eval/fin.lang `index` (`witness two`) | `2` |
+| test/eval/fin.lang `big` (`pack 18446744073709551614 refl : Fin 18446744073709551615`) | `pack 18446744073709551614 (λ i → true)` |
+| test/check/fin-bound.lang (`pack 3 refl : Fin 3`) | `TYPE_REFL`: the left side normalizes to false |
+| test/check/fin-empty.lang (`pack 0 refl : Fin 0`) | `TYPE_REFL`: the left side normalizes to false |
+| test/cubical.c, 4 checks | `Fin 2` is equal to its Sigma; `pack 1 refl : Fin 2` checks; `pack 2 refl : Fin 2` gets `TYPE_REFL`; with a neutral bound `n`, `payload x` checks for `x : Fin n` |
+
+Probes with no fixture (evolve-lang-work/S2d-U3-probes):
+`pack 18446744073709551615 refl : Fin 18446744073709551615` gets
+`TYPE_REFL` (the left side normalizes to trap). `Fin true` gets
+`TYPE_MISMATCH`. A declaration named `Fin` gets `REFUSE_NAME` (rule R4).
+`List ℕ` gets `NAME_UNKNOWN` with the hint "use a vector Fin n → A"
+(Q-S2d-9 (a)). The `fix` field of `List`, `nil` and `cons` stays NULL
+(F-U3-2, RULED (a)). `last : (n : ℕ) → Fin (natAdd n 1)` with
+`last = λ n → pack n refl` gets `TYPE_REFL`: `natLe` has no rule for a
+neutral `n`.
+
+F-U3-1 (RULED (a)): no probe gets `REFUSE_RUNTIME_PATH`. `langc ir`
+leaves out the definitions of type `Fin 3` and `Fin 3 → ℕ`, and it folds
+a closed use (`index` lowers to 2). The lowering stays, and the Q-S2d-3
+reading text tells what `langc ir` does.
+
+### Mutants
+Each mutant edits one site of `rule_fin` in `src/front/check.c`. F1 to
+F6 are the mutants of the S2d survey. F7 is not in the survey. These 7
+mutants are all KILLED.
+
+| Mutant | Site | Result |
+|---|---|---|
+| F1 | `natLe k n` for `natLe (natAdd k 1) n` (le for lt) | KILLED: `fin-bound.lang` and `fin-empty.lang` give exit 0; the cubical checks "Fin unfolds to a Sigma" and "Fin value at the bound" |
+| F2 | the 2 arguments of `natLe` swapped | KILLED: `fin-bound.lang` and `fin-empty.lang` give exit 0; the same 2 cubical checks. The 4 evals pass: each value has `k + 1 = n` |
+| F3 | `false` for `true` in the path type | KILLED: `fin-bound.lang` and `fin-empty.lang` give exit 0; the 4 evals of `test/eval/fin` give `TYPE_REFL`; the 3 cubical checks of `Fin` |
+| F4 | the bound `natAdd n 1` for `n` | KILLED: `fin-bound.lang` and `fin-empty.lang` give exit 0; the 4 evals give `TYPE_REFL` on `big` (`natAdd n 1` traps at n = 18446744073709551615); the cubical checks "Fin unfolds to a Sigma" and "Fin value at the bound" |
+| F5 | the path part dropped (`Fin n` is `ℕ`) | KILLED: `fin-bound.lang` and `fin-empty.lang` give `TYPE_INFER`, not `TYPE_REFL`; the 4 evals give `TYPE_INFER`; the 3 cubical checks of `Fin` |
+| F6 | the bound from `k` (`natLe (natAdd k 1) k`) | KILLED: the 4 evals give `TYPE_REFL`; the cubical checks "Fin unfolds to a Sigma" and "Fin value below the bound". `fin-bound.lang` and `fin-empty.lang` pass |
+| F7 | the quote level `c->level` for `c->level + 1u` | KILLED: the cubical check "Fin with a neutral bound" gets `TYPE_MISMATCH`. The other fixtures have a closed bound, and the quote of a closed value does not use the level |
+
+F-U4-3 (RULED (a)): in U4, F7 SURVIVED. The probe
+evolve-lang-work/S2d-U4-probes/neutral.lang (`value : (n : ℕ) → (x :
+Fin n) → Path Bool (natLe (natAdd (witness x) 1) n) true`, `value n x =
+payload x`) checks on the S2d code. With F7 it gets `TYPE_MISMATCH`: the
+bound changes from `n` to `witness x`. U5 adds this program as the
+cubical check "Fin with a neutral bound" that wants ok (cubical 35 to 36
+checks). F7 is KILLED by this check.
+
+### Printer (U5)
+F-U1b-1 (RULED (a)) and F-U5-1 (RULED (a)): `print_binder` in
+`src/front/eval.c` follows fmt.c for 3 forms. A Sigma in the domain of
+`→` prints as `ℕ × ℕ → ℕ`, a universe in the domain of `→` as `Type 0 →
+ℕ`, and a universe left of `×` as `Type 0 × ℕ`. No expectation line
+changes. The cubical round trip "universe left of arrow" is new (21 to
+22 round trips).

@@ -1,8 +1,8 @@
 # TinyCC Wasm realization
 
 Paths below are relative to the root of evolve-lang. `formers/FORMERS.md`
-gives the host-neutral laws. `src/front/check.c` lines 83-115 are rows of
-the builtin table. `src/front/check.c` lines 1034-1045 are rows of the
+gives the host-neutral laws. `src/front/check.c` lines 82-126 are rows of
+the builtin table. `src/front/check.c` lines 1424-1440 are rows of the
 dropped kit names. The other `src/front/check.c` lines are the
 elaboration. `src/front/parser.c` lines are the grammar.
 `src/front/lower.c` lines are the lowering to the IR.
@@ -17,20 +17,20 @@ can replace it; otherwise `fix` is `null` (`docs/DIAGNOSTICS.md`).
 
 | ID | Former | Status | Where | Evidence |
 |---|---|---|---|---|
-| F1 | Product `A × B` | DONE | `src/front/parser.c:10`, `src/front/check.c:96`, `src/front/check.c:98`, `src/front/check.c:99`, `src/front/lower.c:1193` | `examples/formers.lang:5`, `examples/formers.lang:9`, `examples/formers.lang:12`, `examples/laws.lang:5`, `examples/laws.lang:20` |
-| F2 | Coproduct | DONE | `src/front/check.c:86`, `src/front/check.c:92`, `src/front/check.c:93`, `src/front/check.c:100`, `src/front/lower.c:1206` | `examples/formers.lang:20`, `examples/formers.lang:23`, `examples/laws.lang:23` |
-| F3 | Option | DONE | `src/front/check.c:87`, `src/front/check.c:94`, `src/front/check.c:95`, `src/front/check.c:101`, `src/front/lower.c:1208` | `examples/formers.lang:26`, `examples/formers.lang:29`, `examples/formers.lang:32` |
-| F4 | List | PLANNED: no program name since S1 (O18). The message recommends a vector `Fin n → A` (S2); `fix` is `null` | `src/front/check.c:1041`, `src/front/check.c:1042`, `src/front/check.c:1043` | No program form |
-| F5 | Monad pure/map/bind | DONE over Option and Sum E | `src/front/check.c:102`, `src/front/check.c:103`, `src/front/check.c:104`, `src/front/lower.c:1087`, `src/front/lower.c:1102`, `src/front/lower.c:1196` | `examples/monad.lang:2`, `examples/monad.lang:5`, `examples/monad.lang:8`, `examples/monad.lang:11`, `examples/monad.lang:14`, `examples/laws.lang:14`, `examples/laws.lang:17` |
-| F6 | Algebra fold | DONE over ℕ and domain data types. HOST-LIMIT: a run-time tree | `src/front/check.c:105`, `src/front/lower.c:1137`, `src/front/lower.c:1027`, `src/front/lower.c:1043`, `src/front/lower.c:1063` | `examples/algebra.lang:2`, `examples/algebra.lang:5`, `domain/domain.lang:31`, `test/ir/spine.lang:3`, `test/ir/tree.lang:3` |
-| F7 | Algebra unfold | PLANNED: no program name since S1 (O18) | `src/front/check.c:1045` | No program form |
-| F8 | Filter | PLANNED: no program name since S1 (O18). No core name replaces it | `src/front/check.c:1044` | No program form |
-| F9 | Non-dependent Pi | DONE. HOST-LIMIT: a function value at run time | `src/front/parser.c:362`, `src/front/check.c:1292`, `src/front/check.c:1294`, `src/front/lower.c:575` | `examples/functions.lang:5`, `examples/functions.lang:23`, `examples/laws.lang:8`, `examples/laws.lang:11`, `test/ir/closure.lang:3` |
-| F10 | Dependent Pi | DONE over `Type 0` and over ℕ | `src/front/check.c:1294`, `src/front/check.c:1266`, `src/front/lower.c:1255` | `examples/functions.lang:8`, `examples/functions.lang:17`, `examples/equality.lang:17`, `examples/universes.lang:8` |
-| F11 | Sigma | DONE | `src/front/check.c:1296`, `src/front/check.c:96`, `src/front/check.c:98`, `src/front/check.c:99`, `src/front/lower.c:1199`, `src/front/lower.c:1202` | `examples/sigma.lang:5`, `examples/sigma.lang:8`, `examples/sigma.lang:11`, `examples/sigma.lang:14` |
-| F12 | Eq refl/symm/trans | DONE | `src/front/check.c:88`, `src/front/check.c:97`, `src/front/check.c:106`, `src/front/check.c:107`, `src/front/lower.c:1150` | `examples/equality.lang:8`, `examples/equality.lang:11`, `examples/equality.lang:14`, `test/check/bad-refl.lang:1`, `test/ir/proof-trap.lang:1` |
-| F13 | Eq transport/cong | DONE | `src/front/check.c:108`, `src/front/check.c:109`, `src/front/lower.c:1162`, `src/front/lower.c:1228` | `examples/equality.lang:17`, `examples/equality.lang:20`, `test/ir/proof-trap.lang:4`, `test/ir/proof-trap.lang:16` |
-| F14 | Universes | DONE for Type 0 and Type 1, without cumulativity | `src/front/check.c:1300`, `src/front/lower.c:1255` | `examples/universes.lang:2`, `examples/universes.lang:5`, `test/check/universe.lang:1`, `test/check/universe-range.lang:1` |
+| F1 | Product `A × B` | DONE | `src/front/parser.c:10`, `src/front/check.c:108`, `src/front/check.c:110`, `src/front/check.c:111`, `src/front/lower.c:1193` | `examples/formers.lang:5`, `examples/formers.lang:9`, `examples/formers.lang:12`, `examples/laws.lang:5`, `examples/laws.lang:20` |
+| F2 | Coproduct | DONE as a base sum: a domain data type with more than one constructor, eliminated by `fold`. S2d removed the kit `Sum`, `inl`, `inr`, `either` (Q-S2d-4 (a)): `NAME_UNKNOWN`, hint "use Option or a base sum" | `domain/domain.lang:4`, `domain/domain.lang:12`, `src/front/check.c:1437` | `examples/algebra.lang:5`, `test/check/sum.lang:2` |
+| F3 | Option | DONE | `src/front/check.c:85`, `src/front/check.c:106`, `src/front/check.c:107`, `src/front/check.c:112`, `src/front/lower.c:1208` | `examples/formers.lang:20`, `examples/formers.lang:23`, `examples/formers.lang:26`, `examples/formers.lang:29`, `examples/formers.lang:32`, `examples/laws.lang:23` |
+| F4 | List | PLANNED: no program name since S1 (O18). The message recommends a vector `Fin n → A` (S2); `fix` is `null` | `src/front/check.c:1431`, `src/front/check.c:1432`, `src/front/check.c:1433` | No program form |
+| F5 | Monad pure/map/bind | DONE over Option | `src/front/check.c:113`, `src/front/check.c:114`, `src/front/check.c:115`, `src/front/lower.c:1087`, `src/front/lower.c:1102`, `src/front/lower.c:1196` | `examples/monad.lang:2`, `examples/monad.lang:5`, `examples/monad.lang:8`, `examples/monad.lang:11`, `examples/monad.lang:14`, `examples/laws.lang:14`, `examples/laws.lang:17` |
+| F6 | Algebra fold | DONE over ℕ and domain data types. HOST-LIMIT: a run-time tree | `src/front/check.c:116`, `src/front/lower.c:1137`, `src/front/lower.c:1027`, `src/front/lower.c:1043`, `src/front/lower.c:1063` | `examples/algebra.lang:2`, `examples/algebra.lang:5`, `domain/domain.lang:31`, `test/ir/spine.lang:3`, `test/ir/tree.lang:3` |
+| F7 | Algebra unfold | PLANNED: no program name since S1 (O18) | `src/front/check.c:1435` | No program form |
+| F8 | Filter | PLANNED: no program name since S1 (O18). No core name replaces it | `src/front/check.c:1434` | No program form |
+| F9 | Non-dependent Pi | DONE. HOST-LIMIT: a function value at run time | `src/front/parser.c:362`, `src/front/check.c:1740`, `src/front/check.c:1742`, `src/front/lower.c:575` | `examples/functions.lang:5`, `examples/functions.lang:23`, `examples/laws.lang:8`, `examples/laws.lang:11`, `test/ir/closure.lang:3` |
+| F10 | Dependent Pi | DONE over `Type 0` and over ℕ | `src/front/check.c:1742`, `src/front/check.c:1713`, `src/front/lower.c:1255` | `examples/functions.lang:8`, `examples/functions.lang:17`, `examples/equality.lang:17`, `examples/universes.lang:8` |
+| F11 | Sigma | DONE | `src/front/check.c:1744`, `src/front/check.c:108`, `src/front/check.c:110`, `src/front/check.c:111`, `src/front/lower.c:1199`, `src/front/lower.c:1202` | `examples/sigma.lang:5`, `examples/sigma.lang:8`, `examples/sigma.lang:11`, `examples/sigma.lang:14` |
+| F12 | Eq refl/symm/trans | DONE | `src/front/check.c:102`, `src/front/check.c:109`, `src/front/check.c:117`, `src/front/check.c:118`, `src/front/lower.c:1150` | `examples/equality.lang:8`, `examples/equality.lang:11`, `examples/equality.lang:14`, `test/check/bad-refl.lang:1`, `test/ir/proof-trap.lang:1` |
+| F13 | Eq transport/cong | DONE | `src/front/check.c:119`, `src/front/check.c:120`, `src/front/lower.c:1162`, `src/front/lower.c:1228` | `examples/equality.lang:17`, `examples/equality.lang:20`, `test/ir/proof-trap.lang:4`, `test/ir/proof-trap.lang:16` |
+| F14 | Universes | DONE for Type 0 and Type 1, without cumulativity | `src/front/check.c:1748`, `src/front/lower.c:1255` | `examples/universes.lang:2`, `examples/universes.lang:5`, `test/check/universe.lang:1`, `test/check/universe-range.lang:1` |
 | F15 | Generic indexed family | PARTIAL: only the domain file declares an indexed data type | `domain/domain.lang:22`, `domain/domain.lang:23` | `examples/inventory.lang:14`, `examples/laws.lang:32` |
 
 F4, F7 and F8: S1 removed the kit names `List`, `nil`, `cons`, `unfold`

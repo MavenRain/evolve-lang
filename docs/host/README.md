@@ -60,9 +60,9 @@ The parser also reads the ASCII aliases of `SPEC.md` section 2.3: `->`,
 `\`, `fun x => t`, `*`, `Sigma (x : A) B` and `Nat`. There is no text type.
 
 Core names (`BUILTINS` in `src/front/check.c`): types `ℕ` (core name
-`Nat`), `Bool Unit Sum Option PathP Path`, the interval `I i0 i1 ~ ∧ ∨`,
+`Nat`), `Bool Unit Option PathP Path`, the interval `I i0 i1 ~ ∧ ∨`,
 `Partial` and systems `[ φ ↦ u , ... ]`, the Kan operations `transp
-hcomp`, values `unit true false inl inr either none some option pack
+hcomp`, values `unit true false none some option pack
 witness payload pure map bind fold refl symm trans transport cong`, Nat
 operations `natAdd natSub natMul natEq natLe`, and the Bool eliminator
 `flagIf b yes no`. `Type 0 : Type 1` is the universe chain.
@@ -126,7 +126,7 @@ overflow past 2^64 - 1. `natSub` stops at 0. `Bool` is 0 or 1.
 Compilation is partial evaluation. The compiler normalizes the body of
 each entry with the parameters as free variables. Types and universes erase.
 Proof contents erase, while their trap flags remain. A lambda stays only as the direct function argument of
-`fold`, `map`, `bind`, `either` or `option`. The
+`fold`, `map`, `bind` or `option`. The
 lowering puts its body into a loop or a branch. The lowering refuses two
 programs with a HOST-LIMIT code (see `docs/host/CAPABILITY.md`):
 
@@ -206,10 +206,10 @@ and the cubical checking and normalized-source round trips of `build/cubical`.
 
 ## Known limits
 
-- With no expected type, `either`, `map` and `cong` take the result type
+- With no expected type, `map` and `cong` take the result type
   of the function at a fresh variable. A dependent result needs a
   declared type.
-- A definition with a pair, `Sum`, `Option` or other non-scalar result is
+- A definition with a pair, `Option` or other non-scalar result is
   not an entry. `ir` and `abi` skip it.
 - `langc eval` stops after 20000000 steps (`EVAL_FUEL`). The Wasm module
   has no step limit, so a large loop count can run on Wasm and stop in

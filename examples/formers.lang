@@ -17,11 +17,11 @@ size n = natAdd n 1
 count : (n : ℕ) → ℕ
 count n = n
 
-choice : Sum ℕ ℕ
-choice = inr 5
+choice : Option ℕ
+choice = some 5
 
 picked : ℕ
-picked = either size count choice
+picked = option 0 count choice
 
 nothing : Option ℕ
 nothing = none

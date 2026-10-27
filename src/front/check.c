@@ -43,15 +43,13 @@ typedef struct {
 typedef enum {
   RULE_TYPE0,
   RULE_TYPE1,
-  RULE_TYPE2,
+  RULE_FIN,
   RULE_VALUE0,
-  RULE_INJ,
   RULE_EMPTY,
   RULE_SOME,
   RULE_PACK,
   RULE_REFL,
   RULE_SIGMA_PART,
-  RULE_EITHER,
   RULE_OPTION,
   RULE_PURE,
   RULE_MAP,
@@ -76,16 +74,16 @@ typedef struct {
   uint32_t arity; /* fold: the least number of arguments */
   Rule rule;
   Op op;
-  Op result;     /* VALUE0, NAT2: the result type. EMPTY, INJ: the type former. */
-  uint32_t part; /* INJ, SIGMA_PART: 0 or 1. PATHP: 0 PathP, 1 Path. */
+  Op result;     /* VALUE0, NAT2: the result type. EMPTY: the type former. */
+  uint32_t part; /* SIGMA_PART: 0 or 1. PATHP: 0 PathP, 1 Path. */
 } Builtin;
 
 static const Builtin BUILTINS[] = {
   {"Nat", 0, RULE_TYPE0, OP_NAT, OP_NAT, 0},
   {"Bool", 0, RULE_TYPE0, OP_BOOL, OP_NAT, 0},
   {"Unit", 0, RULE_TYPE0, OP_UNIT, OP_NAT, 0},
-  {"Sum", 2, RULE_TYPE2, OP_SUM, OP_NAT, 0},
   {"Option", 1, RULE_TYPE1, OP_OPTION, OP_NAT, 0},
+  {"Fin", 1, RULE_FIN, OP_NAT, OP_NAT, 0},
   {"I", 0, RULE_VALUE0, OP_I, OP_SSET, 0},
   {"i0", 0, RULE_VALUE0, OP_I0, OP_I, 0},
   {"i1", 0, RULE_VALUE0, OP_I1, OP_I, 0},
@@ -105,15 +103,12 @@ static const Builtin BUILTINS[] = {
   {"unit", 0, RULE_VALUE0, OP_UNIT_VAL, OP_UNIT, 0},
   {"true", 0, RULE_VALUE0, OP_TRUE, OP_BOOL, 0},
   {"false", 0, RULE_VALUE0, OP_FALSE, OP_BOOL, 0},
-  {"inl", 1, RULE_INJ, OP_INL, OP_SUM, 0},
-  {"inr", 1, RULE_INJ, OP_INR, OP_SUM, 1},
   {"none", 0, RULE_EMPTY, OP_NONE, OP_OPTION, 0},
   {"some", 1, RULE_SOME, OP_SOME, OP_OPTION, 0},
   {"pack", 2, RULE_PACK, OP_PACK, OP_NAT, 0},
   {"refl", 0, RULE_REFL, OP_PLAM, OP_PATHP, 0},
   {"witness", 1, RULE_SIGMA_PART, OP_WITNESS, OP_NAT, 0},
   {"payload", 1, RULE_SIGMA_PART, OP_PAYLOAD, OP_NAT, 1},
-  {"either", 3, RULE_EITHER, OP_EITHER, OP_SUM, 0},
   {"option", 3, RULE_OPTION, OP_OPTION_ELIM, OP_OPTION, 0},
   {"pure", 1, RULE_PURE, OP_PURE, OP_NAT, 0},
   {"map", 2, RULE_MAP, OP_MAP, OP_NAT, 0},
@@ -419,25 +414,20 @@ static const Core *finish(Checker *c, const Core *k, const Value *hint, const Va
   return k;
 }
 
-/* 1 when T is Option A or Sum E A. *ELEM is A. */
+/* 1 when T is Option A. *ELEM is A. */
 static int carrier_of(const Value *t, Carrier *carrier, const Value **elem) {
-  if (val_is(t, OP_OPTION)) {
-    *carrier = CARRIER_OPTION;
-    *elem = t->args[0];
-    return 1;
-  }
-  if (!val_is(t, OP_SUM))
+  if (!val_is(t, OP_OPTION))
     return 0;
-  *carrier = CARRIER_SUM;
-  *elem = t->args[1];
+  *carrier = CARRIER_OPTION;
+  *elem = t->args[0];
   return 1;
 }
 
-/* SHAPE (Option, List or Sum E) with the element ELEM. */
+/* SHAPE (Option) with the element ELEM. */
 static const Value *carried(Checker *c, const Value *shape, const Value *elem) {
   if (shape == NULL)
     return NULL;
-  return val_is(shape, OP_SUM) ? tyop(c, OP_SUM, 2, shape->args[0], elem, NULL) : tyop(c, shape->op, 1, elem, NULL, NULL);
+  return tyop(c, shape->op, 1, elem, NULL, NULL);
 }
 
 /* Checks T as a function from DOM. *RESULT is WANT, or the result type that
@@ -473,7 +463,7 @@ static const Value *lam_domain(Checker *c, const Term *t) {
 }
 
 /* The carried argument ARG of map, bind or filter. When ARG does not infer
-   (`inr 3`), its type comes from the expected type and from the binder of
+   (`none`), its type comes from the expected type and from the binder of
    the function FN. */
 static const Core *carried_arg(Call *k, const Term *arg, const Term *fn, const Value **type) {
   Checker *c = k->c;
@@ -497,7 +487,7 @@ static const Core *need_type(Call *k, const char *what) {
 }
 
 static const Core *not_carrier(Call *k, const Value *type) {
-  return nul(FAIL(k->c, "TYPE_MISMATCH", "%s needs a value of type Option A or Sum E A, found a term of type %s", k->b->name, show(k->c, type)));
+  return nul(FAIL(k->c, "TYPE_MISMATCH", "%s needs a value of type Option A, found a term of type %s", k->b->name, show(k->c, type)));
 }
 
 /* 1 when T is Path A a b (a PathP over a constant line). */
@@ -524,13 +514,19 @@ static const Core *rule_type1(Call *k) {
   return op3(k->c, k->b->op, 0, 1, a, NULL, NULL);
 }
 
-static const Core *rule_type2(Call *k) {
-  uint64_t la = 0;
-  uint64_t lb = 0;
-  const Core *a = check_type(k->c, k->args[0], &la);
-  const Core *b = a == NULL ? NULL : check_type(k->c, k->args[1], &lb);
-  k->type = val_univ(k->c->m, la > lb ? la : lb);
-  return op3(k->c, k->b->op, 0, 2, a, b, NULL);
+/* Fin n: the Sigma (k : ℕ) × Path Bool (natLe (natAdd k 1) n) true of
+   PLAN 2.2 (Q-S2d-1 (a), Q-S2d-2 (a)). No Op: the Core is the unfolded
+   Sigma, so the messages print the Sigma. The path type is under the
+   binder k: k is the index 0 and n moves up one level. */
+static const Core *rule_fin(Call *k) {
+  Checker *c = k->c;
+  const Core *n = check(c, k->args[0], nat_type(c));
+  const Core *next = op3(c, OP_NAT_ADD, 0, 2, core_index(c, CORE_VAR, 0), core_leaf(c, CORE_NAT, 1u), NULL);
+  const Core *bound = n == NULL ? NULL : op3(c, OP_NAT_LE, 0, 2, next, quote_value(c->m, c->level + 1u, here(c, n)), NULL);
+  const Core *line = core_bind(c, CORE_LAM, "_", NULL, op3(c, OP_BOOL, 0, 0, NULL, NULL, NULL));
+  const Core *path = op3(c, OP_PATHP, 0, 3, line, bound, op3(c, OP_TRUE, 0, 0, NULL, NULL, NULL));
+  k->type = val_univ(c->m, 0);
+  return core_bind(c, CORE_SIGMA, "k", op3(c, OP_NAT, 0, 0, NULL, NULL, NULL), path);
 }
 
 /* Path A: the constant line `λ _ → A` (there is no OP_PATH). */
@@ -566,13 +562,6 @@ static const Core *rule_pathp(Call *k) {
   return op3(c, OP_PATHP, 0, 3, line, a, b);
 }
 
-static const Core *rule_inj(Call *k) {
-  if (!val_is(k->hint, OP_SUM))
-    return need_type(k, "Sum A B");
-  k->type = k->hint;
-  return op3(k->c, k->b->op, 0, 1, check(k->c, k->args[0], k->hint->args[k->b->part]), NULL, NULL);
-}
-
 static const Core *rule_empty(Call *k) {
   if (!val_is(k->hint, k->b->result))
     return need_type(k, "Option A");
@@ -594,7 +583,7 @@ static const Core *rule_pack(Call *k) {
   const Core *w;
   const Core *p;
   if (s == NULL || s->kind != VAL_SIGMA)
-    return need_type(k, "Sigma (x : A) B");
+    return need_type(k, "(x : A) × B");
   w = check(c, k->args[0], s->dom);
   p = w == NULL ? NULL : check(c, k->args[1], closure_apply(c->m, s, here(c, w)));
   k->type = s;
@@ -660,28 +649,10 @@ static const Core *rule_sigma_part(Call *k) {
   if (s == NULL)
     return NULL;
   if (st == NULL || st->kind != VAL_SIGMA)
-    return nul(FAIL(c, "TYPE_MISMATCH", "%s needs a Sigma value, found a term of type %s", k->b->name, show(c, st)));
+    return nul(FAIL(c, "TYPE_MISMATCH", "%s needs a value of a type (x : A) × B, found a term of type %s", k->b->name, show(c, st)));
   w = op3(c, OP_WITNESS, 0, 1, s, NULL, NULL);
   k->type = k->b->part == 0u ? st->dom : closure_apply(c->m, st, here(c, w));
   return k->b->part == 0u ? w : op3(c, OP_PAYLOAD, 0, 1, s, NULL, NULL);
-}
-
-/* either f g s */
-static const Core *rule_either(Call *k) {
-  Checker *c = k->c;
-  const Value *st = NULL;
-  const Value *res = NULL;
-  const Core *s = infer(c, k->args[2], &st);
-  const Core *f;
-  const Core *g;
-  if (s == NULL)
-    return NULL;
-  if (!val_is(st, OP_SUM))
-    return nul(FAIL(c, "TYPE_MISMATCH", "either needs a value of type Sum A B, found a term of type %s", show(c, st)));
-  f = fn_into(c, k->args[0], st->args[0], k->hint, &res);
-  g = f == NULL ? NULL : check(c, k->args[1], val_arrow(c->m, st->args[1], res));
-  k->type = res;
-  return op3(c, OP_EITHER, 0, 3, f, g, s);
 }
 
 /* option z f o */
@@ -706,7 +677,7 @@ static const Core *rule_pure(Call *k) {
   Carrier carrier = CARRIER_OPTION;
   const Value *a = NULL;
   if (!carrier_of(k->hint, &carrier, &a))
-    return need_type(k, "Option A or Sum E A");
+    return need_type(k, "Option A");
   k->type = k->hint;
   return op3(k->c, OP_PURE, carrier, 1, check(k->c, k->args[0], a), NULL, NULL);
 }
@@ -751,8 +722,6 @@ static const Core *rule_bind(Call *k) {
     return NULL;
   if (!carrier_of(res, &result_carrier, &b) || result_carrier != carrier)
     return nul(FAIL(c, "TYPE_MISMATCH", "bind needs a function into the carrier of %s, found one into %s", show(c, mt), show(c, res)));
-  if (carrier == CARRIER_SUM && !convert_at(c, c->level, res->args[0], mt->args[0]))
-    return nul(FAIL(c, "TYPE_MISMATCH", "bind must preserve the Sum error type %s, found %s", show(c, mt->args[0]), show(c, res->args[0])));
   k->type = res;
   return op3(c, OP_BIND, carrier, 2, x, f, NULL);
 }
@@ -844,7 +813,7 @@ static const Core *rule_fold(Call *k) {
     return fold_simple(k, s);
   }
   s = infer(c, k->args[k->argc - 1u], &st);
-  return s == NULL ? NULL : nul(FAIL(c, "TYPE_MISMATCH", "fold needs a last argument of type Nat or a domain data type, and one case for each constructor; found %u arguments and a last argument of type %s", k->argc, show(c, st)));
+  return s == NULL ? NULL : nul(FAIL(c, "TYPE_MISMATCH", "fold needs a last argument of type ℕ or a domain data type, and one case for each constructor; found %u arguments and a last argument of type %s", k->argc, show(c, st)));
 }
 
 static const Core *rule_symm(Call *k) {
@@ -1247,10 +1216,8 @@ static const Core *rule(Call *k) {
     return rule_hcomp(k);
   case RULE_TYPE1:
     return rule_type1(k);
-  case RULE_TYPE2:
-    return rule_type2(k);
-  case RULE_INJ:
-    return rule_inj(k);
+  case RULE_FIN:
+    return rule_fin(k);
   case RULE_EMPTY:
     return rule_empty(k);
   case RULE_SOME:
@@ -1261,8 +1228,6 @@ static const Core *rule(Call *k) {
     return rule_refl(k);
   case RULE_SIGMA_PART:
     return rule_sigma_part(k);
-  case RULE_EITHER:
-    return rule_either(k);
   case RULE_OPTION:
     return rule_option(k);
   case RULE_PURE:
@@ -1463,12 +1428,16 @@ static const Dropped DROPPED[] = {
   {"pair", "pack", "use pack (a term of A × B is pack a b)", "S1"},
   {"first", "witness", "use witness", "S1"},
   {"second", "payload", "use payload", "S1"},
-  {"List", NULL, "use a vector Fin n → A (S2d)", "S1"},
-  {"nil", NULL, "use a vector Fin n → A (S2d)", "S1"},
-  {"cons", NULL, "use a vector Fin n → A (S2d)", "S1"},
+  {"List", NULL, "use a vector Fin n → A", "S1"},
+  {"nil", NULL, "use a vector Fin n → A", "S1"},
+  {"cons", NULL, "use a vector Fin n → A", "S1"},
   {"filter", NULL, "no core name replaces it", "S1"},
   {"unfold", NULL, "no core name replaces it before S2", "S1"},
-  {"Eq", "Path", "use Path A x y", "S2"}
+  {"Eq", "Path", "use Path A x y", "S2"},
+  {"Sum", NULL, "use Option or a base sum", "S2d"},
+  {"inl", NULL, "use Option or a base sum", "S2d"},
+  {"inr", NULL, "use Option or a base sum", "S2d"},
+  {"either", NULL, "use Option or a base sum", "S2d"}
 };
 
 /* An unknown name at HEAD. When it names this declaration or a later one,
@@ -1734,7 +1703,7 @@ static const Core *infer_lam(Checker *c, const Term *t, const Value **type) {
   const Core *body;
   const Core *quoted;
   if (t->left == NULL)
-    return nul(FAIL(c, "TYPE_INFER", "fun %s => ... needs a binder type here", t->name));
+    return nul(FAIL(c, "TYPE_INFER", "λ %s → ... needs a binder type here", t->name));
   dom = here(c, check_type_at(c, t->left, &level, 1));
   if (!push(c, t->name, dom))
     return NULL;
@@ -2775,7 +2744,7 @@ static int parse_u64(const char *s, uint64_t *out) {
 static const Value *entry_arg(Machine *m, const char *text, int is_bool) {
   uint64_t n = 0;
   if (!parse_u64(text, &n) || (is_bool && n > 1u)) {
-    diag_fail(m->diag, "EVAL_ARGS", m->def, "'%s' is not a %s", text, is_bool ? "Bool (0 or 1)" : "Nat (0 to 2^64-1)");
+    diag_fail(m->diag, "EVAL_ARGS", m->def, "'%s' is not a %s", text, is_bool ? "Bool (0 or 1)" : "ℕ (0 to 2^64-1)");
     return NULL;
   }
   return is_bool ? val_make(m, n == 1u ? OP_TRUE : OP_FALSE, 0, 0, NULL, NULL, NULL) : val_nat(m, n);
@@ -2788,7 +2757,7 @@ static int print_result(Machine *m, const char *name, const Value *v, FILE *out,
     return 0;
   case VAL_TRAP:
     fputs("trap\n", out);
-    fprintf(err, "langc: EVAL_OVERFLOW: %s: a Nat operation overflowed past 2^64-1\n", name);
+    fprintf(err, "langc: EVAL_OVERFLOW: %s: a ℕ operation overflowed past 2^64-1\n", name);
     return 0;
   case VAL_OP:
     if (val_is(v, OP_TRUE) || val_is(v, OP_FALSE)) {

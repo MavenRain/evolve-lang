@@ -115,7 +115,13 @@ int main(void) {
      "codata Route (A : Type 0) : Type where\n  collect : (viaNat : ℕ → Route A) → (seen : A) → (nextRoute : Route A) → (viaBool : Bool → Route A) → Route A\n"
      "route : Route ℕ\nroute = collect ℕ ℕ (λ (s : ℕ) → s) (λ (s : ℕ) (e : ℕ) → natAdd s e) (λ (s : ℕ) → natMul s 2) (λ (s : ℕ) (e : Bool) → natMul s 3) 3\n"
      "value : Path ℕ (seen ℕ (viaBool ℕ (nextRoute ℕ (viaNat ℕ route 5)) true)) 48\n"
-     "value = refl\n", NULL}
+     "value = refl\n", NULL},
+    {"Fin unfolds to a Sigma",
+     "value : Path (Type 0) (Fin 2) ((k : ℕ) × Path Bool (natLe (natAdd k 1) 2) true)\nvalue = refl\n", NULL},
+    {"Fin value below the bound", "value : Fin 2\nvalue = pack 1 refl\n", NULL},
+    {"Fin value at the bound", "value : Fin 2\nvalue = pack 2 refl\n", "TYPE_REFL"},
+    {"Fin with a neutral bound", "value : (n : ℕ) → (x : Fin n) → Path Bool (natLe (natAdd (witness x) 1) n) true\nvalue n x = payload x\n",
+     NULL}
   };
   static const struct { const char *label; const char *signature; const char *body; } rounds[] = {
     {"hcomp", "(p : Path ℕ 0 0) → (i : I) → ℕ", "λ p i → hcomp (λ j → [ i ↦ p j ]) 0"},
@@ -125,7 +131,21 @@ int main(void) {
     {"hcomp Sigma", "(n : ℕ) → (i : I) → ℕ × ℕ", "λ n i → hcomp (λ j → [ i ↦ pack 1 n ]) (pack 1 n)"},
     {"hcomp universe", "(i : I) → Type 0", "λ i → hcomp (λ j → [ i ↦ ℕ ]) ℕ"},
     {"neutral transp", "(e : Path (Type 0) ℕ ℕ) → ℕ → ℕ", "λ e n → transp (λ i → e i) i0 n"},
-    {"nested Path type", "Type 0", "Path (Path ℕ 0 0) refl refl"}
+    {"nested Path type", "Type 0", "Path (Path ℕ 0 0) refl refl"},
+    {"named Sigma type", "Type 0", "(n : ℕ) × PathP (λ (_ : I) → ℕ) n n"},
+    {"product type", "Type 0", "ℕ × Bool"},
+    {"polymorphic Pi type", "Type 1", "(A : Type 0) → (A → A) → A → A"},
+    {"function left of product", "Type 0", "(ℕ → ℕ) × ℕ"},
+    {"function right of product", "Type 0", "ℕ × (ℕ → ℕ)"},
+    {"product left of product", "Type 0", "(ℕ × ℕ) × ℕ"},
+    {"named Sigma with Pi body", "Type 0", "(n : ℕ) × (ℕ → PathP (λ (_ : I) → ℕ) n n)"},
+    {"nested named Sigma", "Type 0", "(n : ℕ) × (k : ℕ) × PathP (λ (_ : I) → ℕ) n k"},
+    {"product right of arrow", "Type 0", "ℕ → ℕ × ℕ"},
+    {"product left of arrow", "Type 0", "(ℕ × ℕ) → ℕ"},
+    {"universe left of product", "Type 1", "(Type 0) × ℕ"},
+    {"universe left of arrow", "Type 1", "(Type 0) → ℕ"},
+    {"shadowed Sigma binder", "Type 0", "(n : ℕ) × (n : ℕ) × Path ℕ n n"},
+    {"annotated lambda", "ℕ → ℕ", "λ (x : ℕ) → natAdd x 1"}
   };
   int ok = 1;
   size_t i;
