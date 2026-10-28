@@ -147,6 +147,7 @@ ir_refused tree REFUSE_RUNTIME_TREE
 ir_refused path REFUSE_RUNTIME_PATH
 ir_refused glue-value REFUSE_RUNTIME_GLUE
 build/langc ir test/ir/glue.lang > /dev/null || { echo "FAIL glue.lang: ir"; fail=$((fail + 1)); }
+build/langc ir test/ir/walk.lang > /dev/null || { echo "FAIL walk.lang: ir"; fail=$((fail + 1)); }
 
 # The Wasm target: each module builds and is valid. Then the differential: on
 # the grid of test/grid.awk, node and `langc eval` give the same result for
@@ -154,7 +155,7 @@ build/langc ir test/ir/glue.lang > /dev/null || { echo "FAIL glue.lang: ir"; fai
 wasms=0
 cases=0
 mismatches=0
-for f in examples/*.lang test/ir/spine.lang test/ir/lazy.lang test/ir/proof-trap.lang; do
+for f in examples/*.lang test/ir/spine.lang test/ir/lazy.lang test/ir/proof-trap.lang test/ir/walk.lang; do
   w="$tmp/$(basename "$f" .lang).wasm"
   wasms=$((wasms + 1))
   if ! build/langc build "$f" -o "$w" 2>"$tmp/w.err" || ! wasm-validate "$w" 2>>"$tmp/w.err" ||

@@ -30,6 +30,9 @@ static const struct {
   {"postulate", TOK_KW_POSTULATE},
   {"Type", TOK_KW_TYPE},
   {"Sigma", TOK_KW_SIGMA},
+  {"table", TOK_KW_TABLE},
+  {"app", TOK_KW_APP},
+  {"protocol", TOK_KW_PROTOCOL},
 };
 
 /* The UTF-8 symbols. `ℕ` is a name token; tok_core_text gives Nat. */
@@ -43,6 +46,7 @@ static const struct {
   {"\xE2\x88\xA7", TOK_MEET},
   {"\xE2\x88\xA8", TOK_JOIN},
   {"\xE2\x86\xA6", TOK_MAPSTO},
+  {"\xE2\x86\x90", TOK_LARROW},
   {"\xE2\x84\x95", TOK_IDENT},
 };
 
@@ -77,6 +81,11 @@ const char *tok_kind_name(TokKind kind) {
     case TOK_MAPSTO: return "'↦'";
     case TOK_KW_TYPE: return "'Type'";
     case TOK_KW_SIGMA: return "'Sigma'";
+    case TOK_DOT: return "'.'";
+    case TOK_LARROW: return "'←'";
+    case TOK_KW_TABLE: return "'table'";
+    case TOK_KW_APP: return "'app'";
+    case TOK_KW_PROTOCOL: return "'protocol'";
   }
   return "a token";
 }
@@ -261,6 +270,7 @@ static int lex_symbol(Lexer *lx) {
     case '[': kind = TOK_LBRACK; break;
     case ']': kind = TOK_RBRACK; break;
     case ',': kind = TOK_COMMA; break;
+    case '.': kind = TOK_DOT; break;
     case '\\': kind = TOK_LAMBDA; break;
     case ':':
       kind = next == '=' ? TOK_DEFINE : TOK_COLON;

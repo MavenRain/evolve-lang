@@ -16,6 +16,8 @@ typedef struct {
 } FmtText;
 
 void fmt_text_init(FmtText *out, Arena *arena);
+/* Appends the canonical text of one term. */
+void fmt_term(FmtText *out, const Term *t);
 /* Appends the canonical text of one declaration. No newline after the last
    line. */
 void fmt_decl(FmtText *out, const Decl *decl);

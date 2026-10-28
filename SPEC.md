@@ -225,18 +225,137 @@ the host form of each former.
 > type its meaning in the design and its definition in host forms. Mark each
 > definition that a probe fact forces with "probe-forced".
 
+The domain is in `domain/domain.lang` (S3, Q-S3-31 (a)). A program has `n`
+columns and `m` tables. A column is a `Fin n` and a table is a `Fin m`. `n`
+counts each column name of the program, over all tables and all `addColumn`
+steps. Each data type, constructor, field and definition name of the domain
+is a core name.
+
 | Type | Meaning (design section) | Definition |
 |---|---|---|
-| | | |
+| `ColType` | The type of a column (PLAN 4.1) | `data` with `text`, `bigint` (`domain/domain.lang:5-7`) |
+| `Null` | The nullability of a column (PLAN 4.1) | `data` with `nullable`, `notNull` (`domain/domain.lang:9-11`) |
+| `CState` | The state of the not-null CHECK of a column (PLAN 4.1) | `data` with `absent`, `notValid`, `valid` (`domain/domain.lang:13-16`) |
+| `State n m` | The schema state (PLAN 4.1) | An iterated Sigma of the 8 fields of 5.1 (`domain/domain.lang:21-49`) |
+| `Cols n` | A vector of columns | `(k : ℕ) × (Fin k → Fin n)` (`domain/domain.lang:52-53`) |
+| `App n` | An application version: the columns that it reads, the columns that it writes on update, the columns that it supplies on insert (PLAN 4.1) | `Cols n × Cols n × Cols n` (`domain/domain.lang:56-57`) |
+| `Step n m s s'` | One step that changes the state `s` into `s'` (PLAN 4.1, J1 of 4.2) | `data` with two `State n m` indices and one constructor for each step word of section 6 (`domain/domain.lang:174-185`) |
+| `Chain n m s0 sk` | A protocol: a chain of steps from `s0` to `sk` (PLAN 4.1) | `data` with `nil : Chain n m s s` and `snoc : Chain n m s s' → Step n m s' s'' → Chain n m s s''` (`domain/domain.lang:188-190`) |
+| `Stage k` | A stage of a protocol with `k` steps (PLAN 4.1) | `Fin (k + 1)` (`domain/domain.lang:202-203`) |
+
+### 5.1 The State fields
+
+Each field has an accessor with the same name (`owner n m s` and so on,
+`domain/domain.lang:27-49`) and a `put` function (`domain/domain.lang:98-114`).
+
+| Field | Type | Meaning | Steps that change it |
+|---|---|---|---|
+| `owner` | `Fin n → Fin m` | The table of each column | none |
+| `key` | `Fin m → Fin n` | The key column of each table | none |
+| `present` | `Fin n → Bool` | The column is in the schema | `addColumn`, `dropColumn` |
+| `ty` | `Fin n → ColType` | The type of the column | `addColumn` |
+| `null` | `Fin n → Null` | The nullability of the column | `addColumn`, `setNotNull` |
+| `check` | `Fin n → CState` | The not-null CHECK of the column | `addColumn`, `dropColumn`, `addNotNullCheck`, `validate`, `dropCheck` |
+| `sync` | `ℕ → ℕ → Bool` | A sync trigger from the first column to the second. It takes the column codes (`witness c`), so that a fold over `ℕ` can test each column (Q-S3-20 (a)) | `installSync`, `dropSync` |
+| `filled` | `Fin n → Bool` | A backfill filled the column | `addColumn`, `backfill`, `dropColumn` |
+
+### 5.2 The `table`, `app` and `protocol` forms
+
+S3 adds three declaration forms (Q-S3-3 (a)). The words `table`, `app` and
+`protocol` are keywords. The tokens `.` (in `t.c`) and `←` (in `backfill`)
+are new; they have no ASCII alias.
+
+```
+decl   := ...
+        | 'table' NAME '(' column (',' column)* ')'
+        | 'app' NAME '(' (item (',' item)*)? ')'
+        | 'protocol' NAME 'where' step+
+column := NAME ':' NAME 'key'?
+item   := ('reads' | 'writes' | 'inserts') NAME '.' NAME
+step   := WORD NAME NAME NAME          (addColumn t c ty, installSync t c c',
+                                        dropSync t c c', renameColumn t c c')
+        | 'backfill' NAME NAME '←' NAME 'batch' NAT
+        | WORD NAME                     (deploy a, retire a)
+        | WORD NAME NAME                (dropColumn, addNotNullCheck, validate,
+                                        setNotNull, dropCheck: t c)
+```
+
+- `table`: each table marks exactly one column `key` (Q-S3-24 (a)). The
+  column type is a name (`text` or `bigint`).
+- `app`: the items are `word t.c`. A word can repeat and can be absent. `()`
+  is an app with no columns. Each `Cols` keeps the item order (Q-S3-26 (a)).
+- `protocol`: one step on each line, under the layout rule (2.4). The step
+  words are the 11 words of section 6 and `renameColumn`, which the checker
+  refuses (`REFUSE_RENAME_INPLACE`).
+
+The elaboration gives these definitions (Q-S3-23 (a)). An unknown name in a
+form gives `NAME_UNKNOWN` with the name as written (Q-S3-25 (a)).
+
+| Form | Definitions |
+|---|---|
+| `table users (...)` | `users : Fin m`, and `users_name : Fin n` for each column `name` |
+| `app v1 (...)` | `v1 : App n` |
+| `protocol rename where` with `k` steps | the stages `rename_0` .. `rename_k : State n m`, and `rename : Chain n m rename_0 rename_k` |
+
+`rename_i` is the state after step `i`. For `deploy` and `retire`,
+`rename_i` is `rename_{i-1}` (Q-S3-27 (a)). Stage 0 (Q-S3-22 (a)): a
+`table` column is present, has its type, is filled and has CHECK absent; the
+`key` column is notNull and the other columns are nullable. A column that
+only an `addColumn` step names is absent, has the type of the `addColumn`,
+is nullable, has CHECK absent and is not filled. There is no sync.
 
 ## 6. Core operations
 
 > Write here (DOMAIN SLOT): only the operations of `design/DESIGN.md`. Give
 > each operation its type and its meaning in the design.
 
+The operations are the 11 step words of a `protocol`. Each step word is a
+constructor of `Step n m` (`domain/domain.lang:174-185`). A step with a
+`pre` function takes a witness `Path Bool (pre ...) true`, and its target is
+the `post` function of its source (J1 of PLAN 4.2, Q-S3-2 (a), Q-S3-21 (a)).
+The `pre` and `post` functions are at `domain/domain.lang:118-170`. "`c` in
+`t`" means that `c` is present and `owner c = t` (`inTbl`).
+
+| Operation | Type | Meaning: pre (must be true) | Meaning: target (post) |
+|---|---|---|---|
+| `addColumn t c ty` | `Step n m s (postAddColumn n m s t c ty)` | `owner c = t`; `c` is not present | `c` present, type `ty`, nullable, CHECK absent, not filled |
+| `installSync t c c'` | `Step n m s (postInstallSync n m s t c c')` | `c` in `t`; `c'` in `t`; `c ≠ c'`; no sync `c c'` | sync `c c'` and sync `c' c` |
+| `dropSync t c c'` | `Step n m s (postDropSync n m s t c c')` | sync `c c'` | no sync `c c'` and no sync `c' c` |
+| `backfill t c ← c' batch k` | `Step n m s (postBackfill n m s t c c' k)` | `c` in `t`; `c'` in `t`; `c ≠ c'`; `1 ≤ k` | `c` filled |
+| `deploy a` | `Step n m s s` | none (Q-S3-4 (a)) | the same state |
+| `retire a` | `Step n m s s` | none (Q-S3-4 (a)) | the same state |
+| `dropColumn t c` | `Step n m s (postDropColumn n m s t c)` | `c` in `t`; `c ≠ key t`; no sync from `c` or to `c` | `c` not present, CHECK absent, not filled |
+| `addNotNullCheck t c` | `Step n m s (postAddNotNullCheck n m s t c)` | `c` in `t`; CHECK absent | CHECK notValid |
+| `validate t c` | `Step n m s (postValidate n m s t c)` | CHECK notValid | CHECK valid |
+| `setNotNull t c` | `Step n m s (postSetNotNull n m s t c)` | `c` in `t`; nullable | notNull |
+| `dropCheck t c` | `Step n m s (postDropCheck n m s t c)` | CHECK not absent | CHECK absent |
+
+`deploy` and `retire` change the live set, not the schema (PLAN 4.1). The
+live-set refusals are S4. `setNotNull` with no `valid` CHECK is J5
+(`REFUSE_LOCK_SCAN`, S4), not J1.
+
+The chain operations (`domain/domain.lang:192-199`):
+
 | Operation | Type | Meaning (design section) |
 |---|---|---|
-| | | |
+| `compose n m s s1 s2 a b` | `Chain n m s s1 → Chain n m s1 s2 → Chain n m s s2` | `a`, then `b` (PLAN `_⨾_`, Q-S3-12 (a)) |
+| `length n m s s1 a` | `Chain n m s s1 → ℕ` | The number of steps of `a` |
+
+### 6.1 Refusal codes of the domain
+
+`langc check` refuses a protocol with these two codes. The texts are in
+`docs/DIAGNOSTICS.md`.
+
+| Code | Meaning | Fixture |
+|---|---|---|
+| `REFUSE_STEP_INDEX` | A protocol step is not legal at its source stage, because a conjunct of the `pre` function of the step is false. The message gives the step number, the step, the source stage, the first false conjunct and the arguments of the `pre` function. `expected` is the false conjunct and `found` is `false`. The span is the step word. | `test/json/REFUSE_STEP_INDEX.lang` |
+| `REFUSE_RENAME_INPLACE` | A protocol has a `renameColumn` step. A rename in place breaks each live old version at once (PLAN 3.3). Use the five-stage protocol of examples/rename. `found` is `renameColumn`. The span is the step word. The checker refuses the step before the names resolve (Q-S3-29 (a)). | `test/json/REFUSE_RENAME_INPLACE.lang` |
+
+Tests: each step word with a `pre` function has one check refusal with a
+false `pre` (`test/check/step-*.lang`, 9 files), and `test/check/rename-inplace.lang`
+refuses a `renameColumn` step. `test/eval/steps.lang` renames `users.name`
+to `users.display_name` in 11 steps and reads one fact of the stage after
+each step.
 
 ## 7. Target and instance encoding
 

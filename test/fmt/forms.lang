@@ -1,0 +1,20 @@
+-- The three forms: a table (the key is not the first column), two apps and
+-- a protocol with the 11 step words.
+table  users ( name : text ,  id : bigint  key )
+
+app v0 ( )
+
+app  v1 (reads users.name,reads users.id,  writes users.name, inserts  users.id)
+
+protocol  rename where
+    addColumn users  display_name text
+    installSync users name display_name
+    backfill users display_name  ←  name batch  1000
+    deploy  v1
+    addNotNullCheck users display_name
+    validate  users display_name
+    setNotNull users display_name
+    dropCheck users  display_name
+    dropSync users name  display_name
+    retire v0
+    dropColumn users display_name

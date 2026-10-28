@@ -1,0 +1,3 @@
+-- A case of a dependent fold must have the case type of the motive.
+bad : (a : ℕ) → (b : ℕ) → (w : Walk a b) → ℕ
+bad a b w = fold (λ (x : ℕ) (y : ℕ) (u : Walk x y) → ℕ) (λ (x : ℕ) → true) (λ (x : ℕ) (y : ℕ) (z : ℕ) (u : Walk x y) (h : Hop y z) (ih : ℕ) → ih) w

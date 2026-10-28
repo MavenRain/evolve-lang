@@ -48,8 +48,31 @@ typedef enum {
   DECL_DEF,    /* [rec] name : type, then the clause name args = body */
   DECL_AXIOM,  /* postulate name : type */
   DECL_FAMILY,  /* data name params : Type where, then one constructor a line */
-  DECL_COFAMILY /* codata name params : Type where, then the one corecursor clause */
+  DECL_COFAMILY, /* codata name params : Type where, then the one corecursor clause */
+  DECL_TABLE,    /* table name ( col : type [key] , .. ) */
+  DECL_APP,      /* app name ( word t.c , .. ) */
+  DECL_PROTOCOL  /* protocol name where, then one step a line */
 } DeclKind;
+
+/* A name in a form item, with its position (for NAME_UNKNOWN). */
+typedef struct {
+  const char *text;
+  int line;
+  int col;
+} FormName;
+
+/* One item of a `table`, `app` or `protocol` form. A table column: names
+   col and type, word "key" or NULL. An app column: word reads, writes or
+   inserts, names t and c. A step: the step word and its names; `nat` is
+   the batch size of a backfill. */
+typedef struct {
+  const char *word;
+  FormName names[3];
+  size_t name_count;
+  uint64_t nat;
+  int line;
+  int col;
+} FormItem;
 
 /* A family is legal only in the domain file (rule R1). */
 typedef enum {
@@ -75,6 +98,8 @@ typedef struct {
   size_t index_count;
   const Ctor *ctors;
   size_t ctor_count;
+  const FormItem *items; /* a table, app or protocol form */
+  size_t item_count;
 } Decl;
 
 /* Domain declarations come first, then the program. */

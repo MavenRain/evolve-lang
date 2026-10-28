@@ -1,0 +1,5 @@
+table users (id : bigint key)
+
+protocol p where
+  addNotNullCheck users id
+  addNotNullCheck users id

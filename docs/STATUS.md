@@ -505,3 +505,222 @@ F-U1b-1 (RULED (a)) and F-U5-1 (RULED (a)): `print_binder` in
 ℕ`, and a universe left of `×` as `Type 0 × ℕ`. No expectation line
 changes. The cubical round trip "universe left of arrow" is new (21 to
 22 round trips).
+
+## S2e: univalence (`Glue`, `glue`, `unglue`, `ua`)
+
+S2e adds the core formers `Glue`, `glue` and `unglue`, and the kernel
+prelude `src/front/prelude.lang` with `isContr`, `fiber`, `isEquiv`,
+`Equiv`, `idEquiv`, `ua` and `transpEquiv` (Q-S2e-1 (a), core names).
+`Glue A [ φ ↦ pack T e , ... ]` is a type. On each face, `e` is an
+`Equiv T A`. The checker refuses a bad Glue term with `GLUE_EQUIV`,
+`GLUE_COVER`, `GLUE_BOUNDARY` or `UNGLUE_TYPE`. `langc ir` refuses a
+Glue value at run time (`REFUSE_RUNTIME_GLUE`). The Kan rules are
+transp_glue, hcomp_glue, hcomp at `Type 0` (hcomp_univ, with
+`transpEquiv`) and Glue eta (Q-S2e-2 (a)). A transport along `ua`
+applies the equivalence (law L3).
+
+### Source
+- zkpolicy-lang 1d263fb (the PLAN port source table). S2e is a hand
+  port, not a patch. The USER commit 86c99ed changes 20 files and adds
+  16 files.
+
+### USER fix (86c99ed)
+86c99ed is the staged S2e tree d939e170 with a USER edit of 4 files
+(53 lines added, 5 removed):
+- `src/front/check.c`: `glue_branch_hint` checks each Glue branch
+  against its type under the complete branch face: pairs, lambdas,
+  nested Glue, and covers with a different partition.
+- `src/front/eval.c`: `print_skips` prints a Glue element and a neutral
+  `unglue` term with their source arguments, so that the checker can
+  check a normalized term again.
+- `test/cubical.c`: 6 new checks (the last is `GLUE_BOUNDARY` on a pair
+  boundary that does not agree) and 2 new round trips (a Glue element,
+  a neutral `unglue`).
+- `docs/PLAN.md`: the S2e row gives cubical 49 checks, 24 round trips.
+
+### Gate counts against S2d
+
+| Count | S2d | S2e (staged) | 86c99ed |
+|---|---|---|---|
+| examples | 10 | 11 | 11 |
+| parse refusals | 10 | 10 | 10 |
+| check refusals | 54 | 59 | 59 |
+| evals | 62 | 69 | 69 |
+| ir lowered | 10 | 11 | 11 |
+| wasm modules | 13 | 14 | 14 |
+| differential cases (0 mismatches) | 773 | 883 | 883 |
+| fmt canonical, non-canonical pairs | 101, 6 | 116, 6 | 116, 6 |
+| json fixtures | 26 | 30 | 30 |
+| diagnostics codes (fixture, no fixture) | 38 (24, 14) | 43 (28, 15) | 43 (28, 15) |
+| cubical checks, round trips | 36, 22 | 43, 22 | 49, 24 |
+
+The S2d column is the S2e base gate, the S2e (staged) column is the S2e
+final gate on d939e170, and the 86c99ed column is the S3 base gate. Each
+gate has 0 failures. The review, domain and diagnostic edit regressions
+pass.
+
+### Mutants
+Each mutant edits one Kan rule in `src/front/eval.c` (Q-S2e-8 (a)).
+These 5 mutants are all KILLED. M1, M3 and M5 lived first. The new test
+in their row kills them (Q-S2e-13 (a), Q-S2e-14 (c)).
+
+| Mutant | Site | Result |
+|---|---|---|
+| M1 | `transp_glue`: `&& fib_def == UINT32_MAX` added to the `delta` test, so `fiber_extend` does not run | KILLED by the new cubical check "ua fiber center not in normal form" (`TYPE_SYSTEM`) |
+| M2 | `transp_glue`: the 3 `OP_I0` of the a0 `unglue` changed to `OP_I1` | KILLED: 6 FAIL lines: `examples/glue.lang` gives `TYPE_REFL` on `uaBetaSwap`; the evals `moved`, `first` and `uaSwapped`; the ir and wasm lines of `examples/glue.lang` |
+| M3 | `hcomp_glue`: the side system (`ψ ↦ unglue (side i)`) changed to the empty system | KILLED by the new cubical check "unglue of an hcomp at a Glue type" (`TYPE_REFL`) |
+| M4 | `hcomp_glue`: `tsys == NULL ? NULL :` added before the `OP_GLUE_ELEM` result | KILLED: 6 FAIL lines: `examples/glue.lang` gives `TYPE_REFL` on `hcompGlue`; the same 5 lines as M2 |
+| M5 | `hcomp_univ`: an `OP_I1` changed to `OP_I0` | KILLED by the new eval `hcompEAt1` of `test/eval/hcomp-line.lang` (`TYPE_REFL`) |
+
+### Op values
+50 Op values (47 before S2e). U1 adds `OP_GLUE`, `OP_GLUE_ELEM` and
+`OP_UNGLUE` (Q-S3-8 (a)). Each row names one program that reaches the
+Op, in the form of the S2d table.
+
+| Op | Surface | Program |
+|---|---|---|
+| OP_GLUE | `Glue` | examples/glue.lang:30 |
+| OP_GLUE_ELEM | `glue` | examples/glue.lang:31 |
+| OP_UNGLUE | `unglue` | test/eval/hcomp-glue.lang:11 |
+
+### Open items from S2e
+- Q-S2e-1 to Q-S2e-14 are RULED. Q-S2b-1 to Q-S2b-8 stay open (PLAN
+  section 11).
+- S3 U5 adds this section (Q-S3-8 (a)).
+
+## S3: domain (`table`, `app`, `protocol`, the steps)
+
+S3 adds the evolve domain to `domain/domain.lang`, the forms `table`,
+`app` and `protocol`, the eliminator over indexed families, and the
+codes `REFUSE_STEP_INDEX` and `REFUSE_RENAME_INPLACE`. SPEC.md sections
+5 and 6 give the domain (Q-S3-31 (a)).
+
+### Source
+- No port source: the PLAN port source table has no S3 row. S3 changes
+  26 files, removes 1 file and adds 20 files.
+
+### Units
+- U0, the eliminator over indexed families: the Op `OP_ELIM_FAMILY`.
+  `fold` with a motive over an indexed family is the dependent
+  eliminator, with one induction hypothesis for each recursive field
+  (Q-S3-15). `domain/domain.lang` has `data Walk`.
+  `test/check/index-fold.lang` moves to `test/eval/index-fold.lang`. New
+  tests: 3 `test/check/fold-*.lang` files, the cubical check "Walk left
+  unit by the eliminator" and `test/ir/walk.lang`. The `DOMAIN_FAMILY`
+  texts (Q-S3-16) and `langc ir` (Q-S3-17) change.
+- U1, the domain: `ColType`, `Null`, `CState`, `State n m`, `Cols`,
+  `App`, 9 pre and 9 post functions, `Step` (11 constructors), `Chain`,
+  `compose`, `length` and `Stage`. The checker has no `nil` row (Q-S3-7
+  (a)): `test/fmt/system` uses `emptySystem`, and `test/review.sh` uses
+  `someSeven`.
+- U2, the forms `table`, `app` and `protocol` (Q-S3-22 to Q-S3-27): the
+  tokens `.` and `←`, the parser, the printer and the elaboration in
+  `src/front/check.c`. New test: `test/fmt/forms`.
+- U3, J1 (Q-S3-28 to Q-S3-30): the step words (with `renameColumn`),
+  the step check of each `protocol` and the two codes, with their rows
+  in `docs/DIAGNOSTICS.md` and 2 new json fixtures.
+- U4, the tests: 10 new `test/check` files (one for each pre, and
+  `rename-inplace.lang`), `test/eval/steps.lang`, and the mutants M1 to
+  M10.
+- U5, the docs: SPEC.md sections 5 and 6, the PLAN S3 row and the Q
+  lines (Q-S3-9 (a)), `docs/host/README.md`, the S2e section and this
+  section.
+
+### Gate counts against S2e
+
+| Count | S2e (86c99ed) | S3 |
+|---|---|---|
+| examples | 11 | 11 |
+| parse refusals | 10 | 10 |
+| check refusals | 59 | 71 |
+| evals | 69 | 83 |
+| ir lowered | 11 | 11 |
+| wasm modules | 14 | 15 |
+| differential cases (0 mismatches) | 883 | 889 |
+| fmt canonical, non-canonical pairs | 116, 6 | 134, 7 |
+| json fixtures | 30 | 32 |
+| diagnostics codes (fixture, no fixture) | 43 (28, 15) | 45 (30, 15) |
+| cubical checks, round trips | 49, 24 | 50, 29 |
+
+The gate has 0 failures. The review, domain and diagnostic edit
+regressions pass.
+
+### Op values
+51 Op values (50 before S3). U0 adds `OP_ELIM_FAMILY` (the inst is the
+family; the arguments are the motive, the cases and the scrutinee). The
+program is the dependent fold over `Walk` that `langc ir` lowers
+(Q-S3-32 (b)).
+
+| Op | Surface | Program |
+|---|---|---|
+| OP_ELIM_FAMILY | `fold` with a motive over an indexed family (`walkSum`) | test/ir/walk.lang:10 |
+
+### Mutants
+M1 to M9 change the body of one pre function in `domain/domain.lang` to
+`true` (Q-S3-10 (a): one mutant for each pre). With the pre `true`, the
+step is legal and the killer gets exit 0. The killer text names the
+conjunct that is false. M10 is on `check_protocol` in
+`src/front/check.c`. M-U0-1 to M-U0-5 are the U0 mutants. These 15
+mutants are all KILLED.
+
+| Mutant | Site | Result |
+|---|---|---|
+| M1 | `preAddColumn` | KILLED by `test/check/step-add-column.lang` (`boolNot (present n m s c) is false`) |
+| M2 | `preInstallSync` | KILLED by `test/check/step-install-sync.lang` (`boolNot (sameCol n c d) is false`) |
+| M3 | `preDropSync` | KILLED by `test/check/step-drop-sync.lang` (`sync n m s (witness c) (witness d) is false`) |
+| M4 | `preBackfill` | KILLED by `test/check/step-backfill.lang` (`natLe 1 k is false`) |
+| M5 | `preDropColumn` | KILLED by `test/check/step-drop-column.lang` (`boolNot (sameCol n c (key n m s t)) is false`) |
+| M6 | `preAddNotNullCheck` | KILLED by `test/check/step-add-not-null-check.lang` (`isAbsent (check n m s c) is false`) |
+| M7 | `preValidate` | KILLED by `test/check/step-validate.lang` (`isNotValid (check n m s c) is false`); also the json compare and `test/json/REFUSE_STEP_INDEX.lang` |
+| M8 | `preSetNotNull` | KILLED by `test/check/step-set-not-null.lang` (`isNullable (null n m s c) is false`) |
+| M9 | `preDropCheck` | KILLED by `test/check/step-drop-check.lang` (`boolNot (isAbsent (check n m s c)) is false`) |
+| M10 | `check_protocol`: `!form_no_rename(c, d) \|\|` changed to `(0 && !form_no_rename(c, d)) \|\|` (no rename refusal) | KILLED by `test/check/rename-inplace.lang` (`REFUSE_RENAME_INPLACE`); also the json compare and `test/json/REFUSE_RENAME_INPLACE.lang` (`NAME_UNKNOWN`) |
+| M-U0-1 | `elim_family` in `src/front/eval.c`: the induction hypothesis loop before the field loop | KILLED: the eval `twoSteps` gives `INTERNAL`; the differential `walk.lang` has 5 mismatches |
+| M-U0-2 | `elim_case_type`: the induction hypothesis at `motive_at(m, motive, st, p)` | KILLED: the cubical check "Walk left unit by the eliminator" gets `TYPE_MISMATCH` |
+| M-U0-3 | the case result at `st->args[p + i]` | KILLED: the same cubical check gets `TYPE_MISMATCH` |
+| M-U0-4 | both refusals of a fold over a higher inductive family removed | KILLED: 4 FAIL lines: `hit-fold.lang` and `fold-hit-motive.lang` (`INTERNAL` in the evaluator), the json compare and `test/json/DOMAIN_FAMILY.lang` |
+| M-U0-5 | `fam_case` in `src/front/lower.c`: the accumulator at the recursive field, no raw field | KILLED: `langc ir` of `test/ir/walk.lang` gives `INTERNAL` ("the lowering found a missing value"); the wasm line |
+
+M10 does not remove the call: with no call, the static function
+`form_no_rename` has no use, and `-Wall -Werror` stops the build. Each
+of M1 to M9 pins one false conjunct. The other conjuncts of a pre have
+no mutant (Q-S3-10 (a)).
+
+### S3 review fixes
+
+Neutral dependent folds retain annotated motive binders through evaluation
+and quotation. Their printed normal forms can be checked again. Five C
+round trips cover explicit and constant indexed motives, function-valued
+motives, recursive families and parameterized families.
+
+The protocol column-definition pass looks up a column only for
+`addColumn`. `deploy` and `retire` have no column index to read.
+
+### Open items from S3
+These items are open for the USER. S3 does not change them.
+- A second `key` gives "expected ',' or ')', found a name". The template
+  prints the token kind for a name token. Q-S3-24 rules "existing code
+  and template", but its sample text has "found 'key'".
+- `deploy v3`, with `app v3` after the protocol, gets the R3 refusal
+  ("v3 is this definition or a later one").
+- Stage 0 of a protocol takes the type term of a column that a later
+  protocol adds first (Q-S3-22 (a), "the addColumn type"). A bad type
+  name there is reported at the earlier protocol (def p_0), with the
+  span in the later one.
+- The survey count plan gives one fmt pair for each form (3 or more).
+  U2 adds 1 pair (`test/fmt/forms`) with all three forms.
+- The fmt canonical count moves 121 to 123 (2 json fixtures) to 134 (10
+  `test/check` files and `test/eval/steps.lang`). The survey count plan
+  does not list these moves.
+- The `REFUSE_RENAME_INPLACE` hint names `examples/rename`. No
+  `protocol` line is under `examples/` now: `examples/rename` is S4.
+- J1 wraps each `Fin` argument as `(λ (x : Fin K) → x) (pack J refl)`,
+  so that a conjunct such as `witness c` can infer it. A false pre uses
+  evaluator fuel on each conjunct (one budget for the program).
+- The SPEC 2.2 keyword list and `LEX_CHAR` symbol list are old: S2 adds
+  `∧`, `∨` and `↦`; S3 adds `table`, `app`, `protocol` and `←`. SPEC
+  5.2 gives the S3 additions.
+- Q-S3-9 (a): `Maybe`, `Trunc` and `Stream` stay in the program test
+  files. `StreamBisim` goes to S6 with `Stream KeyRange` and L2.
+- Q-S3-1 to Q-S3-32 are RULED. Q-S2b-1 to Q-S2b-8 stay open (PLAN
+  section 11).

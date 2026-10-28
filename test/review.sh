@@ -54,11 +54,11 @@ input = none
 output : Option Bool
 output = bind input (λ x → some true)
 
-present : Option ℕ
-present = some 7
+someSeven : Option ℕ
+someSeven = some 7
 
 mapped : Option Bool
-mapped = bind present (λ x → some true)
+mapped = bind someSeven (λ x → some true)
 EOF
 test "$(build/langc eval "$tmp/option.lang" output)" = 'none'
 test "$(build/langc eval "$tmp/option.lang" mapped)" = 'some true'

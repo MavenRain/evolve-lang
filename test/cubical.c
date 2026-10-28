@@ -169,7 +169,12 @@ int main(void) {
      "weirdId : Equiv ℕ ℕ\n"
      "weirdId = pack (λ x → x) (λ y → pack (pack (hcomp (λ l → []) y) (λ k → hcomp (λ l → [ k ↦ y ]) y)) (λ z i → pack (hcomp (λ l → [ i ↦ payload z (~ l) ]) y) (λ k → hcomp (λ l → [ i ↦ payload z (~ l ∨ k) , k ↦ y ]) y)))\n"
      "uaW : Path (Type 0) ℕ ℕ\nuaW = ua ℕ ℕ weirdId\n"
-     "m1w : (j : I) → (n : ℕ) → ℕ\nm1w j n = hcomp (λ k → [ j ↦ transp (λ i → uaW (i ∧ ~ j)) i0 n ]) n\n", NULL}
+     "m1w : (j : I) → (n : ℕ) → ℕ\nm1w j n = hcomp (λ k → [ j ↦ transp (λ i → uaW (i ∧ ~ j)) i0 n ]) n\n", NULL},
+    {"Walk left unit by the eliminator",
+     "append : (a : ℕ) → (b : ℕ) → (c : ℕ) → (u : Walk a b) → (v : Walk b c) → Walk a c\n"
+     "append a b c u v = fold (λ (x : ℕ) (y : ℕ) (w : Walk x y) → Walk a x → Walk a y) (λ (x : ℕ) (t : Walk a x) → t) (λ (x : ℕ) (y : ℕ) (z : ℕ) (w : Walk x y) (h : Hop y z) (ih : Walk a x → Walk a y) (t : Walk a x) → stride a y z (ih t) h) v u\n"
+     "value : (a : ℕ) → (b : ℕ) → (w : Walk a b) → Path (Walk a b) (append a a b (stay a) w) w\n"
+     "value a b w = fold (λ (x : ℕ) (y : ℕ) (u : Walk x y) → Path (Walk x y) (append x x y (stay x) u) u) (λ (x : ℕ) → refl) (λ (x : ℕ) (y : ℕ) (z : ℕ) (u : Walk x y) (h : Hop y z) (ih : Path (Walk x y) (append x x y (stay x) u) u) → λ i → stride x y z (ih i) h) w\n", NULL}
   };
   static const struct { const char *label; const char *signature; const char *body; } rounds[] = {
     {"Glue element", "(j : I) → Glue ℕ [ j ↦ pack ℕ (idEquiv ℕ) ]", "λ j → glue [ j ↦ 7 ] 7"},
@@ -195,7 +200,17 @@ int main(void) {
     {"universe left of product", "Type 1", "(Type 0) × ℕ"},
     {"universe left of arrow", "Type 1", "(Type 0) → ℕ"},
     {"shadowed Sigma binder", "Type 0", "(n : ℕ) × (n : ℕ) × Path ℕ n n"},
-    {"annotated lambda", "ℕ → ℕ", "λ (x : ℕ) → natAdd x 1"}
+    {"annotated lambda", "ℕ → ℕ", "λ (x : ℕ) → natAdd x 1"},
+    {"indexed fold motive", "(a : ℕ) → (b : ℕ) → Walk a b → ℕ",
+     "λ a b w → fold (λ (x : ℕ) (y : ℕ) (u : Walk x y) → ℕ) (λ (x : ℕ) → 0) (λ (x : ℕ) (y : ℕ) (z : ℕ) (u : Walk x y) (h : Hop y z) (ih : ℕ) → natAdd ih 1) w"},
+    {"indexed fold constant motive", "(a : ℕ) → (b : ℕ) → Walk a b → ℕ",
+     "λ a b w → fold (λ (x : ℕ) → 0) (λ (x : ℕ) (y : ℕ) (z : ℕ) (u : Walk x y) (h : Hop y z) (ih : ℕ) → natAdd ih 1) w"},
+    {"indexed fold function motive", "(a : ℕ) → (b : ℕ) → Walk a b → ℕ → ℕ",
+     "λ a b w → fold (λ (x : ℕ) (y : ℕ) (u : Walk x y) → ℕ → ℕ) (λ (x : ℕ) (v : ℕ) → v) (λ (x : ℕ) (y : ℕ) (z : ℕ) (u : Walk x y) (h : Hop y z) (ih : ℕ → ℕ) (v : ℕ) → natAdd (ih v) 1) w"},
+    {"recursive fold motive", "Stack → ℕ",
+     "λ w → fold (λ (s : Stack) → ℕ) 0 (λ (top : ℕ) (rest : Stack) (ih : ℕ) → natAdd top ih) w"},
+    {"parameterized fold motive", "(n : ℕ) → Lot n → ℕ",
+     "λ n w → fold (λ (s : Lot n) → ℕ) (λ (price : ℕ) → price) w"}
   };
   int ok = 1;
   size_t i;

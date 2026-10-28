@@ -9,6 +9,7 @@
 #define SYM_MEET "\xE2\x88\xA7"   /* ∧ */
 #define SYM_JOIN "\xE2\x88\xA8"   /* ∨ */
 #define SYM_MAPSTO "\xE2\x86\xA6" /* ↦ */
+#define SYM_LARROW "\xE2\x86\x90" /* ← */
 
 /* Precedence levels. A term below the level of its slot gets parentheses. */
 enum {
@@ -254,6 +255,67 @@ static void put_data(FmtText *out, const Decl *d) {
   for (size_t i = 0; i < d->ctor_count; i++) put_ctor(out, d, &d->ctors[i]);
 }
 
+/* `table t (c : ty key, c : ty)` */
+static void put_table(FmtText *out, const Decl *d) {
+  put_str(out, "table ");
+  put_str(out, d->name);
+  put_str(out, " (");
+  for (size_t i = 0; i < d->item_count; i++) {
+    const FormItem *it = &d->items[i];
+    if (i > 0) put_str(out, ", ");
+    put_str(out, it->names[0].text);
+    put_str(out, " : ");
+    put_str(out, it->names[1].text);
+    if (it->word != NULL) {
+      put_str(out, " ");
+      put_str(out, it->word);
+    }
+  }
+  put_str(out, ")");
+}
+
+/* `app a (reads t.c, writes t.c)`; `app a ()` has no columns. */
+static void put_app_form(FmtText *out, const Decl *d) {
+  put_str(out, "app ");
+  put_str(out, d->name);
+  put_str(out, " (");
+  for (size_t i = 0; i < d->item_count; i++) {
+    const FormItem *it = &d->items[i];
+    if (i > 0) put_str(out, ", ");
+    put_str(out, it->word);
+    put_str(out, " ");
+    put_str(out, it->names[0].text);
+    put_str(out, ".");
+    put_str(out, it->names[1].text);
+  }
+  put_str(out, ")");
+}
+
+/* `protocol p where`, then one step a line: `  backfill t c ← c' batch N`. */
+static void put_protocol(FmtText *out, const Decl *d) {
+  put_str(out, "protocol ");
+  put_str(out, d->name);
+  put_str(out, " where");
+  for (size_t i = 0; i < d->item_count; i++) {
+    const FormItem *it = &d->items[i];
+    int is_backfill = strcmp(it->word, "backfill") == 0;
+    put_str(out, "\n  ");
+    put_str(out, it->word);
+    for (size_t j = 0; j < it->name_count; j++) {
+      put_str(out, is_backfill && j == 2 ? " " SYM_LARROW " " : " ");
+      put_str(out, it->names[j].text);
+    }
+    if (is_backfill) {
+      put_str(out, " batch ");
+      put_nat(out, it->nat);
+    }
+  }
+}
+
+void fmt_term(FmtText *out, const Term *t) {
+  put_term(out, t, LEVEL_BINDER);
+}
+
 void fmt_decl(FmtText *out, const Decl *decl) {
   switch (decl->kind) {
     case DECL_DEF:
@@ -268,6 +330,15 @@ void fmt_decl(FmtText *out, const Decl *decl) {
     case DECL_FAMILY:
     case DECL_COFAMILY:
       put_data(out, decl);
+      break;
+    case DECL_TABLE:
+      put_table(out, decl);
+      break;
+    case DECL_APP:
+      put_app_form(out, decl);
+      break;
+    case DECL_PROTOCOL:
+      put_protocol(out, decl);
       break;
   }
 }

@@ -447,7 +447,7 @@ on the new checks, docs, close (stage, commit message, next prompt).
 | S2c | kernel part 3: CC (`Stream`: observation `head`, field `tail`), cofamily, the CC branch of `REFUSE_CELL`. Port from intent-lang 67445ae | `Stream` checks; CC refusal fixtures; mutants on the CC criterion. Measured 2026-10-26: `make check` EXIT 0: examples 10; parse refusals 10; check refusals 51; evals 58; ir 10; wasm 13; differential 773 cases, 0 mismatches; fmt 97 canonical, 6 non-canonical pairs; json 26 fixtures, diagnostics 38 codes (24 with a fixture, 14 with no fixture); cubical 32 checks, 8 round trips. `Stream` checks and evaluates (`test/eval/streams.lang`). 11 mutants KILLED of 11 (docs/STATUS.md, S2c); a swap of two checks SURVIVED (the order is not observable) |
 | S2d | kernel part 4: `Fin n` as the defined Sigma of 2.2; O12 (kit `Sum`, `Unit`), the rest of O14, O15 (ASCII value printer); `docs/STATUS.md` S2 section | `Fin` tests; full gate; mutants on the `Fin` bound. DONE. Measured 2026-10-27: `make check` EXIT 0: examples 10; parse refusals 10; check refusals 54; evals 62; ir 10; wasm 13; differential 773 cases, 0 mismatches; fmt 101 canonical, 6 non-canonical pairs; json 26 fixtures, diagnostics 38 codes (24 with a fixture, 14 with no fixture); cubical 36 checks, 22 round trips. U1: the value printer (O15, Q-S2d-8 (a)), round trips 8 to 21. U2: `Sum`, `inl`, `inr`, `either` removed (O12, Q-S2d-4 (a)), Ops 51 to 47 (O14), `map` and `bind` on `Option` only. U3: the builtin `Fin` (Q-S2d-1 (a)), the Sigma `(k : ℕ) × Path Bool (natLe (natAdd k 1) n) true`, no new Op. U4: 7 mutants on the `Fin` bound. U5: the printer agrees with `langc fmt` (F-U1b-1, F-U5-1), the check "Fin with a neutral bound" (F-U4-3), the ruled docs. 7 mutants KILLED of 7 (docs/STATUS.md, S2d) |
 | S2e | univalence: `Glue`, `glue`, `unglue`, `ua` (2.2, law L3). Port from zkpolicy-lang 1d263fb. It must land before S6; it can run at any time after S2d | `ua` transport test; mutants on `transp_glue` and `hcomp_glue`. DONE. Measured 2026-10-27: `make check` EXIT 0: examples 11; parse refusals 10; check refusals 59; evals 69; ir 11; wasm 14; differential 883 cases, 0 mismatches; fmt 116 canonical, 6 non-canonical pairs; json 30 fixtures, diagnostics 43 codes (28 with a fixture, 15 with no fixture); cubical 49 checks, 24 round trips. U1: the core formers `Glue`, `glue`, `unglue` (Ops 47 to 50), the kernel prelude `src/front/prelude.lang` with `isContr`, `fiber`, `isEquiv`, `Equiv`, `idEquiv`, `ua` (Q-S2e-1 (a), core names), the codes `GLUE_EQUIV`, `GLUE_COVER`, `GLUE_BOUNDARY`, `UNGLUE_TYPE` and `REFUSE_RUNTIME_GLUE`, 5 new check refusals. U2: the Kan rules transp_glue, hcomp_glue, hcomp at `Type 0` (hcomp_univ, with the prelude `transpEquiv`) and Glue eta (Q-S2e-2 (a)). U3: the `ua` transport checks in `test/cubical.c` (Q-S2e-7 (a)), `examples/glue.lang`, the eval fixtures, `test/ir/glue.lang`. U4: 5 mutants (Q-S2e-8 (a)); the rows for M1, M3 and M5 (Q-S2e-13 (a), Q-S2e-14 (c)). U5: the docs. 5 mutants KILLED of 5: M1 transp_glue (cubical "ua fiber center not in normal form"), M2 transp_glue (`examples/glue.lang` `uaBetaSwap`), M3 hcomp_glue (cubical "unglue of an hcomp at a Glue type"), M4 hcomp_glue (`examples/glue.lang` `hcompGlue`), M5 hcomp_univ (`test/eval/hcomp-line` `hcompEAt1`) |
-| S3 | domain: `ColType`, `Null`, `CState`, `State`, `App`, the steps, `Step`, `Chain`; the `table`, `app` and `protocol` forms (Q9); `REFUSE_STEP_INDEX`, `REFUSE_RENAME_INPLACE` | one test per step index; mutants on each precondition |
+| S3 | domain: `ColType`, `Null`, `CState`, `State`, `App`, the steps, `Step`, `Chain`; the `table`, `app` and `protocol` forms (Q9); `REFUSE_STEP_INDEX`, `REFUSE_RENAME_INPLACE` | one test per step index; mutants on each precondition. DONE. Measured 2026-10-28: `make check` EXIT 0: examples 11; parse refusals 10; check refusals 71; evals 83; ir 11; wasm 15; differential 889 cases, 0 mismatches; fmt 134 canonical, 7 non-canonical pairs; json 32 fixtures, diagnostics 45 codes (30 with a fixture, 15 with no fixture); cubical 50 checks, 29 round trips. U0: the eliminator over indexed families, `fold` with a motive (Op `OP_ELIM_FAMILY`, Ops 50 to 51), `data Walk`. U1: the domain in `domain/domain.lang` (`ColType`, `Null`, `CState`, `State`, `App`, 9 pre and 9 post functions, `Step`, `Chain`, `compose`, `length`, `Stage`), no `nil` row (Q-S3-7 (a)). U2: the `table`, `app` and `protocol` forms (Q-S3-22 to Q-S3-27). U3: J1, the step words and the codes `REFUSE_STEP_INDEX` and `REFUSE_RENAME_INPLACE` (Q-S3-28 to Q-S3-30). U4: one `test/check` file for each pre, `rename-inplace.lang`, `test/eval/steps.lang`. U5: the docs (SPEC.md sections 5 and 6, Q-S3-31 (a); `docs/STATUS.md` S2e and S3, Q-S3-8 (a)). 10 mutants KILLED of 10: M1 to M9 set one pre to `true` (the `test/check/step-*.lang` file of that pre), M10 removes the rename refusal of `check_protocol` (`test/check/rename-inplace.lang`); also M-U0-1 to M-U0-5 KILLED (docs/STATUS.md, S3) |
 | S4 | the checker: `compat`, `fresh`, `segments`, J4, J5, the codes of 4.4; `examples/rename` GREEN and the drop-early variant refused (the demo); L1, L4, L5, L6 | one test per code with its JSON shape; mutants on each judgement |
 | S5 | JSON report (port of `json.c`), `Fact`, `Guard`, runtime rows | golden reports; mutants on the verdict map |
 | S6 | SQL writer: stage files, `lock_timeout`, guards, ledger, backfill procedure, sync triggers, the CHECK path, `createIndexConcurrently` (Q11); L2, L3; `make check-pg` (optional) | golden SQL files; mutants on lock and guard output |
@@ -550,7 +550,8 @@ reading (a) of each.
 - Q-S2b-2 the place of the declared `Maybe` and `Trunc`. OPEN, reading
   (a). (a) a program test file in S2b (`test/eval/cells.lang`); S3 decides
   the domain placement. (b) `domain/domain.lang` now; the criterion must
-  then run on domain families.
+  then run on domain families. S3 (Q-S3-9 (a), USER 2026-10-27): `Maybe`
+  and `Trunc` stay in the program test files; the S3 domain uses neither.
 - Q-S2b-3 the builtin `Option`. OPEN, reading (a). (a) keep it in S2b, add
   the declared CM twin `Maybe` (a declared `Option` gives `REFUSE_NAME`),
   and remove or keep the builtin in S2d (O12, O14). (b) replace it now
@@ -584,7 +585,9 @@ Questions from S2c (2026-10-26). The USER ruled (a) for all eight on
 - Q-S2c-2 place and program rule. RULED (a) (USER 2026-10-26). As Q-S2b-1
   (a) and Q-S2b-2 (a): a program cofamily runs the CC criterion and a
   passing one is admitted; `Stream` is in `test/eval/streams.lang`; S3
-  decides the domain place; the CC fixtures are `test/check` files.
+  decides the domain place; the CC fixtures are `test/check` files. S3
+  (Q-S3-9 (a), USER 2026-10-27): `Stream` stays in
+  `test/eval/streams.lang`; the S3 domain does not use it.
 - Q-S2c-3 clause surface. RULED (a) (USER 2026-10-26). One clause whose
   name is the corecursor and whose fields are the observation and the
   fields of the cofamily (types `A` and `Stream A`), as intent-lang;
@@ -596,7 +599,8 @@ Questions from S2c (2026-10-26). The USER ruled (a) for all eight on
   `lower.c` do not change.
 - Q-S2c-5 bisimulation. RULED (a) (USER 2026-10-26). `StreamBisim` goes
   to S3 (the dependent eliminator); evolve-lang has no `elim` and no
-  `funExt`.
+  `funExt`. Q-S3-9 (a) (USER 2026-10-27) moves `StreamBisim` to S6, with
+  `Stream KeyRange` and L2.
 - Q-S2c-6 labelled fields `E → D A` (2.1 admits them; 2.2 does not use
   them). RULED (a) (USER 2026-10-26). Port them with the closed-label rule
   and the label universe rule.

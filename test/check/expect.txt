@@ -26,7 +26,6 @@ transp-face.lang TYPE_LINE
 transp-name.lang REFUSE_NAME
 hcomp-base.lang TYPE_SYSTEM
 index-mismatch.lang TYPE_MISMATCH
-index-fold.lang DOMAIN_FAMILY
 cell-list.lang REFUSE_CELL must be the one field of its constructor
 cell-pair.lang REFUSE_CELL must be the one field of its constructor
 cell-ghost.lang REFUSE_CELL
@@ -52,8 +51,21 @@ codata-path-field.lang REFUSE_CELL the field loop must be the observation A
 codata-label-universe.lang REFUSE_CELL the label type of pick is in Type 1, above Type 0 of A
 codata-two-obs.lang REFUSE_CELL it has 2 observations
 hit-fold.lang DOMAIN_FAMILY
+fold-case-type.lang TYPE_MISMATCH expected a term of type ℕ, found a term of type Bool
+fold-motive-family.lang TYPE_MISMATCH the motive of this fold is over Hop, but its scrutinee has the type Walk a b
+fold-hit-motive.lang DOMAIN_FAMILY fold over Trunc is refused: a fold over a higher inductive family is not in S3
 glue-boundary.lang GLUE_BOUNDARY witness e t is 5 but the base is 6
 glue-cover.lang GLUE_COVER the faces of glue join to j
 glue-equiv.lang GLUE_EQUIV each branch of Glue needs pack T e
 unglue-type.lang UNGLUE_TYPE unglue needs a term of a type Glue A sys
 glue-name.lang REFUSE_NAME glue is a core name
+step-add-column.lang REFUSE_STEP_INDEX boolNot (present n m s c) is false
+step-install-sync.lang REFUSE_STEP_INDEX boolNot (sameCol n c d) is false
+step-drop-sync.lang REFUSE_STEP_INDEX sync n m s (witness c) (witness d) is false
+step-backfill.lang REFUSE_STEP_INDEX natLe 1 k is false
+step-drop-column.lang REFUSE_STEP_INDEX boolNot (sameCol n c (key n m s t)) is false
+step-add-not-null-check.lang REFUSE_STEP_INDEX isAbsent (check n m s c) is false
+step-validate.lang REFUSE_STEP_INDEX isNotValid (check n m s c) is false
+step-set-not-null.lang REFUSE_STEP_INDEX isNullable (null n m s c) is false
+step-drop-check.lang REFUSE_STEP_INDEX boolNot (isAbsent (check n m s c)) is false
+rename-inplace.lang REFUSE_RENAME_INPLACE renames a column in place

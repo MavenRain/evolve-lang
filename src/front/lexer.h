@@ -31,7 +31,12 @@ typedef enum {
   TOK_LBRACK,   /* [ (a system) */
   TOK_RBRACK,   /* ] */
   TOK_COMMA,    /* , (between the cells of a system) */
-  TOK_MAPSTO    /* ↦ */
+  TOK_MAPSTO,   /* ↦ */
+  TOK_DOT,      /* . (in the column `t.c` of an `app` form) */
+  TOK_LARROW,   /* ← (in the `backfill` step of a `protocol` form) */
+  TOK_KW_TABLE,
+  TOK_KW_APP,
+  TOK_KW_PROTOCOL
 } TokKind;
 
 /* LINE and COL are 1-based; COL counts code points. END_COL is the column

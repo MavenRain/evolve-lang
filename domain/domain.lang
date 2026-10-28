@@ -1,6 +1,209 @@
--- Sample domain. Replace it with your design. See domain/README.md.
--- Each data type, constructor, field and definition name here becomes a
--- core name (rule R4). Only this file can declare a data type (rule R1).
+-- The evolve domain (S3). A program has n columns and m tables: a column
+-- is a `Fin n`, a table is a `Fin m`. Each data type, constructor, field
+-- and definition name here becomes a core name (rule R4). Only this file
+-- can declare a data type (rule R1).
+data ColType : Type where
+  text : ColType
+  bigint : ColType
+
+data Null : Type where
+  nullable : Null
+  notNull : Null
+
+data CState : Type where
+  absent : CState
+  notValid : CState
+  valid : CState
+
+-- The schema state: owner, key, present, ty, null, check, sync, filled.
+-- `sync` takes the column codes (`witness c`), so that a fold over ℕ can
+-- test each column (Q-S3-20 (a)).
+State : (n : ℕ) → (m : ℕ) → Type 0
+State n m = (Fin n → Fin m) × (Fin m → Fin n) × (Fin n → Bool) × (Fin n → ColType) × (Fin n → Null) × (Fin n → CState) × (ℕ → ℕ → Bool) × (Fin n → Bool)
+
+mkState : (n : ℕ) → (m : ℕ) → (sOwner : Fin n → Fin m) → (sKey : Fin m → Fin n) → (sPresent : Fin n → Bool) → (sTy : Fin n → ColType) → (sNull : Fin n → Null) → (sCheck : Fin n → CState) → (sSync : ℕ → ℕ → Bool) → (sFilled : Fin n → Bool) → State n m
+mkState n m sOwner sKey sPresent sTy sNull sCheck sSync sFilled = pack sOwner (pack sKey (pack sPresent (pack sTy (pack sNull (pack sCheck (pack sSync sFilled))))))
+
+owner : (n : ℕ) → (m : ℕ) → (s : State n m) → Fin n → Fin m
+owner n m s = witness s
+
+key : (n : ℕ) → (m : ℕ) → (s : State n m) → Fin m → Fin n
+key n m s = witness (payload s)
+
+present : (n : ℕ) → (m : ℕ) → (s : State n m) → Fin n → Bool
+present n m s = witness (payload (payload s))
+
+ty : (n : ℕ) → (m : ℕ) → (s : State n m) → Fin n → ColType
+ty n m s = witness (payload (payload (payload s)))
+
+null : (n : ℕ) → (m : ℕ) → (s : State n m) → Fin n → Null
+null n m s = witness (payload (payload (payload (payload s))))
+
+check : (n : ℕ) → (m : ℕ) → (s : State n m) → Fin n → CState
+check n m s = witness (payload (payload (payload (payload (payload s)))))
+
+sync : (n : ℕ) → (m : ℕ) → (s : State n m) → ℕ → ℕ → Bool
+sync n m s = witness (payload (payload (payload (payload (payload (payload s))))))
+
+filled : (n : ℕ) → (m : ℕ) → (s : State n m) → Fin n → Bool
+filled n m s = payload (payload (payload (payload (payload (payload (payload s))))))
+
+-- The columns of an app: k columns, each a `Fin n`.
+Cols : (n : ℕ) → Type 0
+Cols n = (k : ℕ) × (Fin k → Fin n)
+
+-- An app: reads, writes, inserts.
+App : (n : ℕ) → Type 0
+App n = Cols n × Cols n × Cols n
+
+boolNot : (x : Bool) → Bool
+boolNot x = flagIf x false true
+
+boolAnd : (x : Bool) → (y : Bool) → Bool
+boolAnd x y = flagIf x y false
+
+sameCol : (n : ℕ) → (c : Fin n) → (d : Fin n) → Bool
+sameCol n c d = natEq (witness c) (witness d)
+
+sameTbl : (m : ℕ) → (t : Fin m) → (u : Fin m) → Bool
+sameTbl m t u = natEq (witness t) (witness u)
+
+isAbsent : (x : CState) → Bool
+isAbsent x = fold true false false x
+
+isNotValid : (x : CState) → Bool
+isNotValid x = fold false true false x
+
+isNullable : (x : Null) → Bool
+isNullable x = fold true false x
+
+-- `allFrom n p i` is true when p holds at i, i + 1, ..., i + n - 1.
+allFrom : (n : ℕ) → (p : ℕ → Bool) → ℕ → Bool
+allFrom n p = fold (λ (r : ℕ → Bool) (i : ℕ) → boolAnd (p i) (r (natAdd i 1))) (λ (i : ℕ) → true) n
+
+-- Column c is present and table t owns it.
+inTbl : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → Bool
+inTbl n m s t c = boolAnd (present n m s c) (sameTbl m (owner n m s c) t)
+
+-- No sync goes from c or to c.
+noSync : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → Bool
+noSync n m s c = allFrom n (λ (d : ℕ) → boolAnd (boolNot (sync n m s (witness c) d)) (boolNot (sync n m s d (witness c)))) 0
+
+setAt : (n : ℕ) → (A : Type 0) → (f : Fin n → A) → (c : Fin n) → (v : A) → (d : Fin n) → A
+setAt n A f c v d = flagIf (sameCol n d c) v (f d)
+
+setSync : (f : ℕ → ℕ → Bool) → (c : ℕ) → (d : ℕ) → (v : Bool) → (x : ℕ) → (y : ℕ) → Bool
+setSync f c d v x y = flagIf (boolAnd (natEq x c) (natEq y d)) v (f x y)
+
+putPresent : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (v : Bool) → State n m
+putPresent n m s c v = mkState n m (owner n m s) (key n m s) (setAt n Bool (present n m s) c v) (ty n m s) (null n m s) (check n m s) (sync n m s) (filled n m s)
+
+putTy : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (v : ColType) → State n m
+putTy n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (setAt n ColType (ty n m s) c v) (null n m s) (check n m s) (sync n m s) (filled n m s)
+
+putNull : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (v : Null) → State n m
+putNull n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (setAt n Null (null n m s) c v) (check n m s) (sync n m s) (filled n m s)
+
+putCheck : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (v : CState) → State n m
+putCheck n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (null n m s) (setAt n CState (check n m s) c v) (sync n m s) (filled n m s)
+
+putSync : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (d : Fin n) → (v : Bool) → State n m
+putSync n m s c d v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (null n m s) (check n m s) (setSync (sync n m s) (witness c) (witness d) v) (filled n m s)
+
+putFilled : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (v : Bool) → State n m
+putFilled n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (null n m s) (check n m s) (sync n m s) (setAt n Bool (filled n m s) c v)
+
+-- The J1 pre and target functions (Q-S3-2 (a), Q-S3-21 (a)). Each takes
+-- the fields of its step. deploy and retire have none.
+preAddColumn : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → (v : ColType) → Bool
+preAddColumn n m s t c v = boolAnd (sameTbl m (owner n m s c) t) (boolNot (present n m s c))
+
+postAddColumn : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → (v : ColType) → State n m
+postAddColumn n m s t c v = putFilled n m (putCheck n m (putNull n m (putTy n m (putPresent n m s c true) c v) c nullable) c absent) c false
+
+preInstallSync : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → (d : Fin n) → Bool
+preInstallSync n m s t c d = boolAnd (inTbl n m s t c) (boolAnd (inTbl n m s t d) (boolAnd (boolNot (sameCol n c d)) (boolNot (sync n m s (witness c) (witness d)))))
+
+postInstallSync : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → (d : Fin n) → State n m
+postInstallSync n m s t c d = putSync n m (putSync n m s c d true) d c true
+
+preDropSync : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → (d : Fin n) → Bool
+preDropSync n m s t c d = sync n m s (witness c) (witness d)
+
+postDropSync : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → (d : Fin n) → State n m
+postDropSync n m s t c d = putSync n m (putSync n m s c d false) d c false
+
+preBackfill : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → (d : Fin n) → (k : ℕ) → Bool
+preBackfill n m s t c d k = boolAnd (inTbl n m s t c) (boolAnd (inTbl n m s t d) (boolAnd (boolNot (sameCol n c d)) (natLe 1 k)))
+
+postBackfill : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → (d : Fin n) → (k : ℕ) → State n m
+postBackfill n m s t c d k = putFilled n m s c true
+
+preDropColumn : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → Bool
+preDropColumn n m s t c = boolAnd (inTbl n m s t c) (boolAnd (boolNot (sameCol n c (key n m s t))) (noSync n m s c))
+
+postDropColumn : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → State n m
+postDropColumn n m s t c = putFilled n m (putCheck n m (putPresent n m s c false) c absent) c false
+
+preAddNotNullCheck : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → Bool
+preAddNotNullCheck n m s t c = boolAnd (inTbl n m s t c) (isAbsent (check n m s c))
+
+postAddNotNullCheck : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → State n m
+postAddNotNullCheck n m s t c = putCheck n m s c notValid
+
+preValidate : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → Bool
+preValidate n m s t c = isNotValid (check n m s c)
+
+postValidate : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → State n m
+postValidate n m s t c = putCheck n m s c valid
+
+preSetNotNull : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → Bool
+preSetNotNull n m s t c = boolAnd (inTbl n m s t c) (isNullable (null n m s c))
+
+postSetNotNull : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → State n m
+postSetNotNull n m s t c = putNull n m s c notNull
+
+preDropCheck : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → Bool
+preDropCheck n m s t c = boolNot (isAbsent (check n m s c))
+
+postDropCheck : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → State n m
+postDropCheck n m s t c = putCheck n m s c absent
+
+-- One step of a protocol. Each step with a pre takes a witness that its
+-- pre is true; its target is a function of its source.
+data Step (n : ℕ) (m : ℕ) : State n m → State n m → Type where
+  addColumn : (addSrc : State n m) → (addTbl : Fin m) → (addCol : Fin n) → (addType : ColType) → (addOk : Path Bool (preAddColumn n m addSrc addTbl addCol addType) true) → Step n m addSrc (postAddColumn n m addSrc addTbl addCol addType)
+  installSync : (installSrc : State n m) → (installTbl : Fin m) → (installCol : Fin n) → (installPeer : Fin n) → (installOk : Path Bool (preInstallSync n m installSrc installTbl installCol installPeer) true) → Step n m installSrc (postInstallSync n m installSrc installTbl installCol installPeer)
+  dropSync : (unsyncSrc : State n m) → (unsyncTbl : Fin m) → (unsyncCol : Fin n) → (unsyncPeer : Fin n) → (unsyncOk : Path Bool (preDropSync n m unsyncSrc unsyncTbl unsyncCol unsyncPeer) true) → Step n m unsyncSrc (postDropSync n m unsyncSrc unsyncTbl unsyncCol unsyncPeer)
+  backfill : (fillSrc : State n m) → (fillTbl : Fin m) → (fillCol : Fin n) → (fillFrom : Fin n) → (fillBatch : ℕ) → (fillOk : Path Bool (preBackfill n m fillSrc fillTbl fillCol fillFrom fillBatch) true) → Step n m fillSrc (postBackfill n m fillSrc fillTbl fillCol fillFrom fillBatch)
+  deploy : (deploySrc : State n m) → (deployApp : App n) → Step n m deploySrc deploySrc
+  retire : (retireSrc : State n m) → (retireApp : App n) → Step n m retireSrc retireSrc
+  dropColumn : (dropSrc : State n m) → (dropTbl : Fin m) → (dropCol : Fin n) → (dropOk : Path Bool (preDropColumn n m dropSrc dropTbl dropCol) true) → Step n m dropSrc (postDropColumn n m dropSrc dropTbl dropCol)
+  addNotNullCheck : (guardSrc : State n m) → (guardTbl : Fin m) → (guardCol : Fin n) → (guardOk : Path Bool (preAddNotNullCheck n m guardSrc guardTbl guardCol) true) → Step n m guardSrc (postAddNotNullCheck n m guardSrc guardTbl guardCol)
+  validate : (validateSrc : State n m) → (validateTbl : Fin m) → (validateCol : Fin n) → (validateOk : Path Bool (preValidate n m validateSrc validateTbl validateCol) true) → Step n m validateSrc (postValidate n m validateSrc validateTbl validateCol)
+  setNotNull : (strictSrc : State n m) → (strictTbl : Fin m) → (strictCol : Fin n) → (strictOk : Path Bool (preSetNotNull n m strictSrc strictTbl strictCol) true) → Step n m strictSrc (postSetNotNull n m strictSrc strictTbl strictCol)
+  dropCheck : (unguardSrc : State n m) → (unguardTbl : Fin m) → (unguardCol : Fin n) → (unguardOk : Path Bool (preDropCheck n m unguardSrc unguardTbl unguardCol) true) → Step n m unguardSrc (postDropCheck n m unguardSrc unguardTbl unguardCol)
+
+-- A protocol from one state to another: `nil` and `snoc`.
+data Chain (n : ℕ) (m : ℕ) : State n m → State n m → Type where
+  nil : (nilAt : State n m) → Chain n m nilAt nilAt
+  snoc : (snocSrc : State n m) → (snocMid : State n m) → (snocDst : State n m) → (snocRest : Chain n m snocSrc snocMid) → (snocLast : Step n m snocMid snocDst) → Chain n m snocSrc snocDst
+
+-- `compose a b` is a, then b (PLAN `_⨾_`, Q-S3-12 (a)): a fold on b whose
+-- motive gives a function on chains that end where b starts.
+compose : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (s2 : State n m) → (a : Chain n m s s1) → (b : Chain n m s1 s2) → Chain n m s s2
+compose n m s s1 s2 a b = fold (λ (x : State n m) (y : State n m) (w : Chain n m x y) → Chain n m s x → Chain n m s y) (λ (x : State n m) (u : Chain n m s x) → u) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : Chain n m s x → Chain n m s y) (u : Chain n m s x) → snoc n m s y z (ih u) h) b a
+
+-- The number of steps of a chain.
+length : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (a : Chain n m s s1) → ℕ
+length n m s s1 a = fold (λ (x : State n m) → 0) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : ℕ) → natAdd ih 1) a
+
+-- The stages of a protocol with k steps.
+Stage : (k : ℕ) → Type 0
+Stage k = Fin (natAdd k 1)
+
+-- Kit sample (Q-S3-5 (a)). The kit tests use these names. A later slice
+-- removes them, when the ir and wasm tests have evolve replacements.
 data Color : Type where
   red : Color
   green : Color
@@ -25,6 +228,11 @@ data Lot (size : ℕ) : Type where
 -- An indexed family (S2b): `Hop m n` is one step from m to n.
 data Hop : ℕ → ℕ → Type where
   up : (hopFrom : ℕ) → Hop hopFrom (natAdd hopFrom 1)
+
+-- A walk (S3 U0): `Walk m n` is a chain of Hop steps from m to n.
+data Walk : ℕ → ℕ → Type where
+  stay : (stayAt : ℕ) → Walk stayAt stayAt
+  stride : (walkFrom : ℕ) → (walkMid : ℕ) → (walkTo : ℕ) → (walkRest : Walk walkFrom walkMid) → (walkLast : Hop walkMid walkTo) → Walk walkFrom walkTo
 
 lineTotal : (item : Item) → ℕ
 lineTotal item = natMul (itemPrice item) (itemCount item)

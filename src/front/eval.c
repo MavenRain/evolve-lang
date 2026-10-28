@@ -26,7 +26,8 @@ static const char *const OP_NAMES[] = {
   [OP_FROMPARTIAL] = "fromPartial",
   [OP_TRANSP] = "transp", [OP_TPART] = "%tpart", [OP_TCOD] = "%tcod",
   [OP_HCOMP] = "hcomp", [OP_SYSMAP] = "%sysmap", [OP_GLUE] = "Glue",
-  [OP_GLUE_ELEM] = "glue", [OP_UNGLUE] = "unglue", [OP_PCTOR] = "?"
+  [OP_GLUE_ELEM] = "glue", [OP_UNGLUE] = "unglue", [OP_PCTOR] = "?",
+  [OP_ELIM_FAMILY] = "fold"
 };
 
 /* The number of arguments of each operation. VARIES: it comes from the
@@ -45,7 +46,8 @@ static const unsigned char OP_ARITY[] = {
   [OP_PARTIAL] = 2, [OP_SYSTEM] = 3, [OP_SYSNIL] = 0, [OP_FROMPARTIAL] = 1,
   [OP_TRANSP] = 3, [OP_TPART] = 1, [OP_TCOD] = 2,
   [OP_HCOMP] = 4, [OP_SYSMAP] = 2,
-  [OP_GLUE] = 3, [OP_GLUE_ELEM] = 3, [OP_UNGLUE] = 4, [OP_PCTOR] = VARIES
+  [OP_GLUE] = 3, [OP_GLUE_ELEM] = 3, [OP_UNGLUE] = 4, [OP_PCTOR] = VARIES,
+  [OP_ELIM_FAMILY] = VARIES
 };
 
 typedef enum {
@@ -411,6 +413,58 @@ static const Value *fold_family(Machine *m, uint32_t family, const Value *const 
   for (i = 0; i < ctor->field_count && acc != NULL; i++) {
     field = x->args[fam->param_count + i];
     acc = apply_value(m, acc, ctor->fields[i].recursive ? fold_family(m, family, cases, ncases, field) : field);
+  }
+  m->depth--;
+  return acc;
+}
+
+/* A copy of the N arguments A with X last. */
+static const Value *const *args_with_last(Machine *m, const Value *const *a, uint32_t n, const Value *x) {
+  const Value **args = arena_alloc(m->arena, ((size_t)n + 1u) * sizeof *args);
+  uint32_t i;
+  if (args == NULL)
+    return NULL;
+  for (i = 0; i + 1u < n; i++)
+    args[i] = a[i];
+  args[n - 1u] = x;
+  return args;
+}
+
+/* fold P case... x over a domain family, A = [P, the cases, x]: the case of
+   the constructor of X, applied to its fields, then to the fold of each
+   recursive field (the same P and cases). */
+static const Value *elim_family(Machine *m, uint32_t family, const Value *const *a, uint32_t n) {
+  const FamilyInfo *fam;
+  const CtorInfo *ctor;
+  const Value *const *rec;
+  const Value *acc;
+  const Value *x = n >= 2u ? a[n - 1u] : NULL;
+  uint32_t i;
+  if (x == NULL)
+    return NULL;
+  switch (scrut_of(x)) {
+  case SCRUT_TRAP:
+    return x;
+  case SCRUT_NEUTRAL:
+    rec = args_with_last(m, a, n, x);
+    return rec == NULL ? oom(m) : val_op(m, VAL_STUCK, OP_ELIM_FAMILY, family, 0, rec, n);
+  case SCRUT_VALUE:
+    break;
+  }
+  if (!val_is(x, OP_CTOR) || x->inst >= m->ctor_count || family >= m->family_count)
+    return internal(m, "a fold of a value that is not in the family");
+  fam = &m->families[family];
+  ctor = &m->ctors[x->inst];
+  if (x->inst < fam->first_ctor || x->inst - fam->first_ctor >= n - 2u || x->argc != fam->param_count + ctor->field_count)
+    return internal(m, "a fold of a constructor of another family");
+  if (!enter(m))
+    return NULL;
+  acc = a[1u + x->inst - fam->first_ctor];
+  for (i = 0; i < ctor->field_count && acc != NULL; i++)
+    acc = apply_value(m, acc, x->args[fam->param_count + i]);
+  for (i = 0; i < ctor->field_count && acc != NULL; i++) {
+    rec = ctor->fields[i].recursive ? args_with_last(m, a, n, x->args[fam->param_count + i]) : NULL;
+    acc = !ctor->fields[i].recursive ? acc : rec == NULL ? oom(m) : apply_value(m, acc, elim_family(m, family, rec, n));
   }
   m->depth--;
   return acc;
@@ -1191,6 +1245,7 @@ static const Value *transp_ctor(Machine *m, const Value *const *a, uint32_t n) {
   case OP_BIND:
   case OP_FOLD_NAT:
   case OP_FOLD_FAMILY:
+  case OP_ELIM_FAMILY:
   case OP_WITNESS:
   case OP_PAYLOAD:
   case OP_NAT_ADD:
@@ -1713,6 +1768,7 @@ static const Value *transp_op(Machine *m, const Value *h, const Value *const *a,
   case OP_BIND:
   case OP_FOLD_NAT:
   case OP_FOLD_FAMILY:
+  case OP_ELIM_FAMILY:
   case OP_WITNESS:
   case OP_PAYLOAD:
   case OP_NAT_ADD:
@@ -1889,6 +1945,7 @@ static const Value *hcomp_op(Machine *m, const Value *const *a, uint32_t n) {
   case OP_BIND:
   case OP_FOLD_NAT:
   case OP_FOLD_FAMILY:
+  case OP_ELIM_FAMILY:
   case OP_WITNESS:
   case OP_PAYLOAD:
   case OP_NAT_ADD:
@@ -2101,6 +2158,8 @@ static uint32_t varied_arity(const Machine *m, Op op, uint32_t inst) {
     return f->param_count + f->index_count;
   if (op == OP_FOLD_FAMILY && f != NULL)
     return f->ctor_count + 1u;
+  if (op == OP_ELIM_FAMILY && f != NULL)
+    return f->ctor_count + 2u;
   return UINT32_MAX;
 }
 
@@ -2241,6 +2300,8 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
     return reduce_fold_nat(m, a, n);
   case OP_FOLD_FAMILY:
     return fold_family(m, inst, a, n - 1u, a[n - 1u]);
+  case OP_ELIM_FAMILY:
+    return elim_family(m, inst, a, n);
   case OP_NAT_ADD:
     return nat_add(m, a, n);
   case OP_NAT_SUB:
@@ -2284,7 +2345,7 @@ static const Value *eval_inner(Machine *m, const Env *env, const Core *c) {
   case CORE_UNIV:
     return val_univ(m, c->nat);
   case CORE_LAM:
-    return val_closure(m, VAL_LAM, c->name, NULL, env, c->b);
+    return val_closure(m, VAL_LAM, c->name, c->a == NULL ? NULL : eval_core(m, env, c->a), env, c->b);
   case CORE_PI:
     return val_closure(m, VAL_PI, c->name, eval_core(m, env, c->a), env, c->b);
   case CORE_SIGMA:
@@ -2482,7 +2543,7 @@ static const Core *quote_app(Machine *m, uint32_t level, const Value *v) {
 }
 
 static const Core *quote_binder(Machine *m, uint32_t level, const Value *v, CoreKind kind) {
-  const Core *dom = kind == CORE_LAM ? NULL : quote_value(m, level, v->dom);
+  const Core *dom = v->dom == NULL ? NULL : quote_value(m, level, v->dom);
   const Core *body = quote_value(m, level + 1u, closure_apply(m, v, val_var(m, level)));
   Core *c;
   if (body == NULL || (dom == NULL && kind != CORE_LAM))

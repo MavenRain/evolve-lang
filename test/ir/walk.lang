@@ -1,0 +1,10 @@
+-- A walk that exists only at run time, so `langc ir` walks its spine with
+-- the dependent fold step (S3 U0). The gate compares `langc eval` results.
+walkStart : (m : ℕ) × Walk 0 m
+walkStart = pack 0 (stay 0)
+
+walkStep : (p : (m : ℕ) × Walk 0 m) → (m : ℕ) × Walk 0 m
+walkStep p = pack (natAdd (witness p) 1) (stride 0 (witness p) (natAdd (witness p) 1) (payload p) (up (witness p)))
+
+walkSum : (n : ℕ) → ℕ
+walkSum n = fold (λ (x : ℕ) (y : ℕ) (w : Walk x y) → ℕ) (λ (x : ℕ) → 0) (λ (x : ℕ) (y : ℕ) (z : ℕ) (u : Walk x y) (h : Hop y z) (ih : ℕ) → natAdd ih (natAdd y 1)) (payload (fold walkStep walkStart n))

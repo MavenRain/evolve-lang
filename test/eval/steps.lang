@@ -1,0 +1,54 @@
+-- The state after each step word (S3 U4): a rename of users.name to
+-- users.display_name in 11 steps. Each def reads one fact of the stage after
+-- its step. deploy and retire do not change the state.
+table users (name : text, id : bigint key)
+
+app v0 (reads users.name, reads users.id, writes users.name, inserts users.id)
+
+app v1 (reads users.display_name, reads users.id, writes users.display_name, inserts users.id)
+
+protocol rename where
+  addColumn users display_name text
+  installSync users name display_name
+  backfill users display_name ← name batch 1000
+  deploy v1
+  addNotNullCheck users display_name
+  validate users display_name
+  setNotNull users display_name
+  dropCheck users display_name
+  dropSync users name display_name
+  retire v0
+  dropColumn users name
+
+afterAddColumn : Bool
+afterAddColumn = present 3 1 rename_1 users_display_name
+
+afterInstallSync : Bool
+afterInstallSync = sync 3 1 rename_2 (witness users_name) (witness users_display_name)
+
+afterBackfill : Bool
+afterBackfill = filled 3 1 rename_3 users_display_name
+
+afterDeploy : Bool
+afterDeploy = filled 3 1 rename_4 users_display_name
+
+afterAddNotNullCheck : Bool
+afterAddNotNullCheck = isNotValid (check 3 1 rename_5 users_display_name)
+
+afterValidate : Bool
+afterValidate = isNotValid (check 3 1 rename_6 users_display_name)
+
+afterSetNotNull : Bool
+afterSetNotNull = isNullable (null 3 1 rename_7 users_display_name)
+
+afterDropCheck : Bool
+afterDropCheck = isAbsent (check 3 1 rename_8 users_display_name)
+
+afterDropSync : Bool
+afterDropSync = sync 3 1 rename_9 (witness users_name) (witness users_display_name)
+
+afterRetire : Bool
+afterRetire = present 3 1 rename_10 users_name
+
+afterDropColumn : Bool
+afterDropColumn = present 3 1 rename_11 users_name

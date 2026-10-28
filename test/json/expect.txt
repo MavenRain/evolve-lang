@@ -1,6 +1,6 @@
 == DOMAIN_FAMILY.lang exit 1
-{"code":"DOMAIN_FAMILY","severity":"error","span":{"file":"test/json/DOMAIN_FAMILY.lang","line":1,"col":1,"end_line":2,"end_col":33},"expected":null,"found":null,"fix":null,"retry":true,"message":"fold over Hop is not in S2: a fold over an indexed family needs a dependent eliminator (S3)"}
-{"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}
+{"code":"DOMAIN_FAMILY","severity":"error","span":{"file":"test/json/DOMAIN_FAMILY.lang","line":5,"col":1,"end_line":6,"end_col":39},"expected":null,"found":null,"fix":null,"retry":true,"message":"fold over Trunc is refused: a fold over a higher inductive family is not in S3"}
+{"parsed":"2 of 2","typed":"1 of 2","affine":"0 of 0","laws":"0 of 0"}
 == GLUE_BOUNDARY.lang exit 1
 {"code":"GLUE_BOUNDARY","severity":"error","span":{"file":"test/json/GLUE_BOUNDARY.lang","line":1,"col":1,"end_line":2,"end_col":25},"expected":null,"found":null,"fix":null,"retry":true,"message":"on the face j, witness e t is 5 but the base is 6"}
 {"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}
@@ -46,6 +46,12 @@
 == REFUSE_REC.lang exit 1
 {"code":"REFUSE_REC","severity":"error","span":{"file":"test/json/REFUSE_REC.lang","line":1,"col":1,"end_line":2,"end_col":16},"expected":null,"found":null,"fix":null,"retry":true,"message":"a rec declaration is refused (rule R3); use fold"}
 {"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}
+== REFUSE_RENAME_INPLACE.lang exit 1
+{"code":"REFUSE_RENAME_INPLACE","severity":"error","span":{"file":"test/json/REFUSE_RENAME_INPLACE.lang","line":4,"col":3,"end_line":4,"end_col":15},"expected":null,"found":"renameColumn","fix":null,"retry":true,"message":"renameColumn users id ident renames a column in place and breaks each live old version at once; use the five-stage protocol of examples/rename"}
+{"parsed":"2 of 2","typed":"1 of 2","affine":"0 of 0","laws":"0 of 0"}
+== REFUSE_STEP_INDEX.lang exit 1
+{"code":"REFUSE_STEP_INDEX","severity":"error","span":{"file":"test/json/REFUSE_STEP_INDEX.lang","line":4,"col":3,"end_line":4,"end_col":11},"expected":"isNotValid (check n m s c)","found":"false","fix":null,"retry":true,"message":"step 1 (validate users id) is not legal at stage p_0: isNotValid (check n m s c) is false (s = p_0, t = users, c = users.id)"}
+{"parsed":"2 of 2","typed":"1 of 2","affine":"0 of 0","laws":"0 of 0"}
 == TYPE_ARITY.lang exit 1
 {"code":"TYPE_ARITY","severity":"error","span":{"file":"test/json/TYPE_ARITY.lang","line":1,"col":1,"end_line":2,"end_col":17},"expected":null,"found":null,"fix":null,"retry":true,"message":"natAdd needs 2 arguments, found 1"}
 {"parsed":"1 of 1","typed":"0 of 1","affine":"0 of 0","laws":"0 of 0"}

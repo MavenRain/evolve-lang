@@ -1,0 +1,4 @@
+table users (id : bigint key)
+
+protocol p where
+  addColumn users id text

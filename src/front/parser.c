@@ -197,6 +197,11 @@ static int starts_atom(TokKind kind) {
     case TOK_RBRACK:
     case TOK_COMMA:
     case TOK_MAPSTO:
+    case TOK_DOT:
+    case TOK_LARROW:
+    case TOK_KW_TABLE:
+    case TOK_KW_APP:
+    case TOK_KW_PROTOCOL:
       return 0;
   }
   return 0;
@@ -432,6 +437,11 @@ static const Term *parse_atom(Parser *p) {
     case TOK_RBRACK:
     case TOK_COMMA:
     case TOK_MAPSTO:
+    case TOK_DOT:
+    case TOK_LARROW:
+    case TOK_KW_TABLE:
+    case TOK_KW_APP:
+    case TOK_KW_PROTOCOL:
       break;
   }
   fail_at(p, tok, "a term");
@@ -759,6 +769,166 @@ static int parse_data(Parser *p, Decl *d) {
   return 1;
 }
 
+/* A name token is the word WORD. */
+static int at_word(const Parser *p, const char *word) {
+  size_t len = 0;
+  const char *core = tok_core_text(cur(p), &len);
+  return at(p, TOK_IDENT) && strlen(word) == len && memcmp(core, word, len) == 0;
+}
+
+static int take_form_name(Parser *p, FormItem *it, const char *what) {
+  FormName *name = &it->names[it->name_count];
+  name->line = cur(p)->line;
+  name->col = cur(p)->col;
+  name->text = take_name(p, what);
+  if (name->text == NULL) return 0;
+  it->name_count++;
+  return 1;
+}
+
+/* A new item at the current token, with no names. */
+static FormItem *next_item(Parser *p, FormItem **items, size_t *count, size_t *cap) {
+  *items = grow(p, *items, *count, cap, sizeof **items);
+  if (*items == NULL) return NULL;
+  FormItem *it = &(*items)[*count];
+  (*count)++;
+  memset(it, 0, sizeof *it);
+  it->line = cur(p)->line;
+  it->col = cur(p)->col;
+  return it;
+}
+
+/* The head `KEYWORD NAME` of a form. */
+static int parse_form_head(Parser *p, Decl *d, DeclKind kind, const char *what) {
+  d->kind = kind;
+  bump(p);
+  d->name = take_name(p, what);
+  p->stop = 1;
+  if (d->name == NULL) return 0;
+  p->def = d->name;
+  return 1;
+}
+
+/* `table NAME ( col : type [key] , .. )`: exactly one column is `key`
+   (Q-S3-24). */
+static int parse_table(Parser *p, Decl *d) {
+  if (!parse_form_head(p, d, DECL_TABLE, "a table name") || !expect(p, TOK_LPAREN, "'('")) return 0;
+  if (at(p, TOK_RPAREN)) return fail_at(p, cur(p), "a column marked 'key'");
+  FormItem *items = NULL;
+  size_t count = 0;
+  size_t cap = 0;
+  int keyed = 0;
+  do {
+    FormItem *it = next_item(p, &items, &count, &cap);
+    if (it == NULL || !take_form_name(p, it, "a column name") || !expect(p, TOK_COLON, "':'")
+        || !take_form_name(p, it, "a column type"))
+      return 0;
+    if (at_word(p, "key")) {
+      if (keyed) return fail_at(p, cur(p), "',' or ')'");
+      keyed = 1;
+      it->word = "key";
+      bump(p);
+    }
+  } while (eat(p, TOK_COMMA));
+  if (!at(p, TOK_RPAREN)) return fail_at(p, cur(p), "',' or ')'");
+  if (!keyed) return fail_at(p, cur(p), "a column marked 'key'");
+  bump(p);
+  d->items = items;
+  d->item_count = count;
+  return 1;
+}
+
+static const char *const APP_WORDS[] = {"reads", "writes", "inserts"};
+
+/* `app NAME ( word t.c , .. )`: a word may repeat or be absent (Q-S3-26). */
+static int parse_app_form(Parser *p, Decl *d) {
+  if (!parse_form_head(p, d, DECL_APP, "an app name") || !expect(p, TOK_LPAREN, "'('")) return 0;
+  FormItem *items = NULL;
+  size_t count = 0;
+  size_t cap = 0;
+  if (!at(p, TOK_RPAREN)) {
+    do {
+      FormItem *it = next_item(p, &items, &count, &cap);
+      if (it == NULL) return 0;
+      for (size_t i = 0; i < sizeof APP_WORDS / sizeof APP_WORDS[0]; i++)
+        if (at_word(p, APP_WORDS[i])) it->word = APP_WORDS[i];
+      if (it->word == NULL) return fail_at(p, cur(p), "'reads', 'writes' or 'inserts'");
+      bump(p);
+      if (!take_form_name(p, it, "a table name") || !expect(p, TOK_DOT, "'.'") || !take_form_name(p, it, "a column name"))
+        return 0;
+    } while (eat(p, TOK_COMMA));
+  }
+  if (!expect(p, TOK_RPAREN, "',' or ')'")) return 0;
+  d->items = items;
+  d->item_count = count;
+  return 1;
+}
+
+/* The step words and the names after each (Q-S3-3 (a)). */
+static const struct {
+  const char *word;
+  size_t names;
+} STEP_WORDS[] = {
+  {"addColumn", 3}, {"installSync", 3}, {"dropSync", 3},     {"backfill", 3},
+  {"deploy", 1},    {"retire", 1},      {"dropColumn", 2},   {"addNotNullCheck", 2},
+  {"validate", 2},  {"setNotNull", 2},  {"dropCheck", 2},    {"renameColumn", 3},
+};
+
+/* `deploy a` and `retire a` name an app; `addColumn t c ty` names a type
+   last; the other steps name a table, then columns. */
+static const char *step_what(const char *word, size_t names, size_t i) {
+  if (names == 1) return "an app name";
+  if (i == 0) return "a table name";
+  return i == 2 && strcmp(word, "addColumn") == 0 ? "a column type" : "a column name";
+}
+
+/* One step line; `backfill t c ← c' batch N`. */
+static int parse_step(Parser *p, FormItem *it, int column) {
+  size_t names = 0;
+  for (size_t i = 0; i < sizeof STEP_WORDS / sizeof STEP_WORDS[0]; i++) {
+    if (at_word(p, STEP_WORDS[i].word)) {
+      it->word = STEP_WORDS[i].word;
+      names = STEP_WORDS[i].names;
+    }
+  }
+  if (it->word == NULL) return fail_at(p, cur(p), "a step word");
+  bump(p);
+  p->stop = column;
+  int is_backfill = strcmp(it->word, "backfill") == 0;
+  int ok = 1;
+  for (size_t i = 0; ok && i < names; i++)
+    ok = (!is_backfill || i != 2 || expect(p, TOK_LARROW, "'←'"))
+      && take_form_name(p, it, step_what(it->word, names, i));
+  if (ok && is_backfill) {
+    ok = at_word(p, "batch") ? 1 : fail_at(p, cur(p), "'batch'");
+    if (ok) bump(p);
+    ok = ok && (at(p, TOK_NAT) ? 1 : fail_at(p, cur(p), "a Nat literal"));
+    if (ok) {
+      it->nat = cur(p)->nat;
+      bump(p);
+    }
+  }
+  p->stop = 1;
+  return ok;
+}
+
+/* `protocol NAME where`, then one step a line at one column. */
+static int parse_protocol(Parser *p, Decl *d) {
+  if (!parse_form_head(p, d, DECL_PROTOCOL, "a protocol name") || !expect(p, TOK_KW_WHERE, "'where'")) return 0;
+  if (!at(p, TOK_IDENT) || !first_on_line(p)) return fail_at(p, cur(p), "a step on a new indented line");
+  int column = cur(p)->col;
+  FormItem *items = NULL;
+  size_t count = 0;
+  size_t cap = 0;
+  do {
+    FormItem *it = next_item(p, &items, &count, &cap);
+    if (it == NULL || !parse_step(p, it, column)) return 0;
+  } while (at_ctor(p, column));
+  d->items = items;
+  d->item_count = count;
+  return 1;
+}
+
 static int parse_decl_body(Parser *p, Decl *d) {
   switch (cur(p)->kind) {
     case TOK_KW_POSTULATE: return parse_postulate(p, d);
@@ -766,6 +936,9 @@ static int parse_decl_body(Parser *p, Decl *d) {
     case TOK_KW_CODATA: return parse_data(p, d);
     case TOK_KW_REC:
     case TOK_IDENT: return parse_def(p, d);
+    case TOK_KW_TABLE: return parse_table(p, d);
+    case TOK_KW_APP: return parse_app_form(p, d);
+    case TOK_KW_PROTOCOL: return parse_protocol(p, d);
     case TOK_EOF:
     case TOK_NAT:
     case TOK_LPAREN:
@@ -788,6 +961,8 @@ static int parse_decl_body(Parser *p, Decl *d) {
     case TOK_RBRACK:
     case TOK_COMMA:
     case TOK_MAPSTO:
+    case TOK_DOT:
+    case TOK_LARROW:
       break;
   }
   return fail_at(p, cur(p), "a signature, 'rec', 'postulate', 'data' or 'codata'");
@@ -798,6 +973,7 @@ static int parse_decl(Parser *p, Decl *d) {
   const Token *tok = cur(p);
   p->def = NULL;
   p->stop = 0;
+  memset(d, 0, sizeof *d);
   d->origin = p->origin;
   d->line = tok->line;
   d->col = tok->col;

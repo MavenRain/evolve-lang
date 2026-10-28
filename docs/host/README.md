@@ -186,20 +186,20 @@ how to replace the sample domain.
 |---|---|
 | `examples: 11 checked, 0 failed` | `langc check` accepts each `examples/*.lang` file |
 | `parse refusals: 10 checked` | each `test/parse` file fails with the code in `test/parse/expect.txt`; one file has 1100 nested parentheses |
-| `check refusals: 59 checked` | each `test/check` mutant fails with the code in `test/check/expect.txt`, and with the message text when the line has text after the code; the `TYPE_REFL` message shows both normal forms |
-| `evals: 69 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
+| `check refusals: 71 checked` | each `test/check` mutant fails with the code in `test/check/expect.txt`, and with the message text when the line has text after the code; the `TYPE_REFL` message shows both normal forms |
+| `evals: 83 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
 | `ir: 11 lowered` | `langc ir` lowers each example, with one `func` for each `abi` line |
-| `wasm: 14 modules valid` | `langc build` writes a module for each example and for `test/ir/spine.lang`, `test/ir/lazy.lang` and `test/ir/proof-trap.lang`; `wasm-validate` and `wasm-objdump -x` accept it |
-| `differential: 883 cases, 0 mismatches` | node runs each entry on the grid of `test/grid.awk`; each result is equal to the `langc eval` result, and a trap is equal to a trap |
-| `fmt: 116 canonical, 6 non-canonical pairs` | `langc fmt` keeps each committed `.lang` file and each canonical `test/fmt` file the same; it is idempotent, and its output parses to the same terms; each non-canonical `test/fmt` input gives its expected canonical text |
-| `json: 30 fixtures; diagnostics: 43 codes, 28 with a fixture, 15 with no fixture` | each `test/json` fixture gives the JSON shape of its code; each fixture code is in `docs/DIAGNOSTICS.md` |
+| `wasm: 15 modules valid` | `langc build` writes a module for each example and for `test/ir/spine.lang`, `test/ir/lazy.lang`, `test/ir/proof-trap.lang` and `test/ir/walk.lang`; `wasm-validate` and `wasm-objdump -x` accept it |
+| `differential: 889 cases, 0 mismatches` | node runs each entry on the grid of `test/grid.awk`; each result is equal to the `langc eval` result, and a trap is equal to a trap |
+| `fmt: 134 canonical, 7 non-canonical pairs` | `langc fmt` keeps each committed `.lang` file and each canonical `test/fmt` file the same; it is idempotent, and its output parses to the same terms; each non-canonical `test/fmt` input gives its expected canonical text |
+| `json: 32 fixtures; diagnostics: 45 codes, 30 with a fixture, 15 with no fixture` | each `test/json` fixture gives the JSON shape of its code; each fixture code is in `docs/DIAGNOSTICS.md` |
 | `gate: 0 failures` | the sum of all failures |
 
 The gate also checks the usage and IO exit codes, five `eval` refusals,
 `test/ir/closure.lang` (`REFUSE_RUNTIME_CLOSURE`), `test/ir/tree.lang`
 (`REFUSE_RUNTIME_TREE`), `test/ir/path.lang` (`REFUSE_RUNTIME_PATH`),
 `test/ir/glue-value.lang` (`REFUSE_RUNTIME_GLUE`), the `ir` of
-`test/ir/glue.lang`, the 5 cases of `test/ir/spine.lang`,
+`test/ir/glue.lang` and `test/ir/walk.lang`, the 5 cases of `test/ir/spine.lang`,
 `pick 2 4 9` = `trap` on Wasm, and the absence of em-dashes and en-dashes.
 Then `make check` runs `test/review.sh` and the domain regressions of
 `build/fronttool`, the diagnostic edit regressions of `build/diagnostics`,

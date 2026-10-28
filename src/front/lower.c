@@ -687,6 +687,7 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_BIND:
   case OP_FOLD_NAT:
   case OP_FOLD_FAMILY:
+  case OP_ELIM_FAMILY:
   case OP_WITNESS:
   case OP_PAYLOAD:
   case OP_NAT_ADD:
@@ -854,19 +855,27 @@ static int chain_end(Low *l, Buf *b, const Walk *w, Buf *body) {
   return set(l, body, w->rev, ex_load(l, ex_local(l, w->rev), 3)) && st_repeat(l, b, ex_local(l, w->count), body);
 }
 
+/* The cases of a fold over a family start at this argument: a dependent
+   fold has its motive first. */
+static uint32_t fold_base(const Value *v) {
+  return v->op == OP_ELIM_FAMILY ? 1u : 0u;
+}
+
 /* A fold step at the node ADDR of the constructor C: ACC := FN applied to
-   the fields, with ACC for the recursive field R. */
-static int fam_case(Low *l, Buf *b, const IrExpr *addr, const Value *fn, const CtorInfo *c, uint32_t r, Slot acc) {
-  Operand *args = arena_alloc(l->m->arena, ((size_t)c->field_count + 1u) * sizeof *args);
+   the fields, with ACC for the recursive field R. A dependent step (DEP)
+   takes all the fields, then ACC. */
+static int fam_case(Low *l, Buf *b, const IrExpr *addr, const Value *fn, const CtorInfo *c, uint32_t r, uint32_t dep, Slot acc) {
+  uint32_t n = c->field_count + (dep != 0u && r < c->field_count ? 1u : 0u);
+  Operand *args = arena_alloc(l->m->arena, ((size_t)n + 1u) * sizeof *args);
   uint32_t k;
   if (args == NULL)
     return oom(l);
   for (k = 0; k < c->field_count; k++)
-    if (k != r && !field_at(l, b, addr, k, &args[k]))
+    if ((dep != 0u || k != r) && !field_at(l, b, addr, k, &args[k]))
       return 0;
   if (r < c->field_count)
-    args[r] = slot_get(l, acc);
-  return apply_into(l, b, fn, args, c->field_count, acc);
+    args[dep != 0u ? c->field_count : r] = slot_get(l, acc);
+  return apply_into(l, b, fn, args, n, acc);
 }
 
 /* SWITCH on the tag of the node at ADDR into ACC. When REC_ARMS is 1, the
@@ -882,7 +891,7 @@ static int fam_switch(Low *l, Buf *b, const IrExpr *addr, const Value *v, const 
     return oom(l);
   for (i = 0; i < fam->ctor_count; i++) {
     arm = buf_under(b);
-    if (!((rec[i] != NO_REC) == rec_arms ? fam_case(l, &arm, addr, v->args[i], &l->m->ctors[fam->first_ctor + i], rec[i], acc)
+    if (!((rec[i] != NO_REC) == rec_arms ? fam_case(l, &arm, addr, v->args[fold_base(v) + i], &l->m->ctors[fam->first_ctor + i], rec[i], fold_base(v), acc)
                                          : store(l, &arm, acc, trap_value(l))))
       return 0;
     arms[i] = block_of(&arm);
@@ -901,7 +910,7 @@ static int family_spine(Low *l, Buf *b, const Value *v, const uint32_t *rec, Ope
   Buf in = buf_under(b);
   Buf body = buf_under(b);
   *out = slot_get(l, acc);
-  return lower(l, b, v->args[fam->ctor_count], &x) && walk(l, b, x, rec, fam->ctor_count, &w) &&
+  return lower(l, b, v->args[fold_base(v) + fam->ctor_count], &x) && walk(l, b, x, rec, fam->ctor_count, &w) &&
          fam_switch(l, &in, ex_local(l, w.cur), v, rec, 0, acc) && guard(l, b, ex_local(l, w.end), acc, &in) &&
          chain_node(l, &body, &w, &node) && fam_switch(l, &body, node, v, rec, 1, acc) && chain_end(l, b, &w, &body);
 }
@@ -932,7 +941,8 @@ static int family_fold(Low *l, Buf *b, const Value *v, Operand *out) {
     rec += here;
     fields[i] = c->field_count;
   }
-  return rec != 0 ? family_spine(l, b, v, recs, out) : cases_of(l, b, v->args[fam->ctor_count], v->args, fields, fam->ctor_count, out);
+  return rec != 0 ? family_spine(l, b, v, recs, out)
+                  : cases_of(l, b, v->args[fold_base(v) + fam->ctor_count], v->args + fold_base(v), fields, fam->ctor_count, out);
 }
 
 /* The two arms of an option or a sum, behind the guard on the flag of X. */
@@ -1048,6 +1058,7 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_FOLD_NAT:
     return fold_nat(l, b, v, out);
   case OP_FOLD_FAMILY:
+  case OP_ELIM_FAMILY:
     return family_fold(l, b, v, out);
   case OP_NAT_ADD:
     return nat_bin(l, b, v, IR_OP_ADD, 1, out);

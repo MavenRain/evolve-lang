@@ -1,0 +1,3 @@
+-- The motive of a dependent fold must be over the family of its scrutinee.
+bad : (a : ℕ) → (b : ℕ) → (w : Walk a b) → ℕ
+bad a b w = fold (λ (x : ℕ) (y : ℕ) (h : Hop x y) → ℕ) (λ (f : ℕ) → f) w

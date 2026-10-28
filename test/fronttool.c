@@ -70,7 +70,7 @@ static int json_encoding(void) {
 }
 
 static const char *const TERM_KINDS[] = {"var", "nat", "app", "lam", "pi", "sigma", "univ"};
-static const char *const DECL_KINDS[] = {"def", "postulate", "data", "codata"};
+static const char *const DECL_KINDS[] = {"def", "postulate", "data", "codata", "table", "app", "protocol"};
 
 static void dump_term(const char *role, const Term *t, int depth) {
   if (t == NULL) return;
@@ -126,6 +126,13 @@ static int dump(const char *file) {
       printf("  ctor %s\n", d->ctors[j].name);
       dump_fields("field", d->ctors[j].fields, d->ctors[j].field_count, 2);
       for (k = 0; k < d->index_count; k++) dump_term("index", d->ctors[j].indices[k], 2);
+    }
+    for (j = 0; j < d->item_count; j++) {
+      const FormItem *it = &d->items[j];
+      size_t k;
+      printf("  item %s", it->word != NULL ? it->word : "-");
+      for (k = 0; k < it->name_count; k++) printf(" %s", it->names[k].text);
+      printf(" %llu\n", (unsigned long long)it->nat);
     }
   }
   arena_release(&arena);

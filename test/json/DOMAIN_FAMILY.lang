@@ -1,2 +1,6 @@
-start : (h : Hop 1 2) → ℕ
-start h = fold (λ (x : ℕ) → x) h
+data Trunc (A : Type 0) : Type where
+  inc : (a : A) → Trunc A
+  squash : (x : Trunc A) → (y : Trunc A) → Path (Trunc A) x y
+
+count : (t : Trunc ℕ) → ℕ
+count t = fold (λ n → n) (λ p q → 0) t

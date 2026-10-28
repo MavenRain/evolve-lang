@@ -67,7 +67,8 @@ typedef enum {
   OP_GLUE,       /* Glue A [ φ ↦ pack T e , ... ]: [A, φ, sys] */
   OP_GLUE_ELEM,  /* glue [ φ ↦ t , ... ] a at G = Glue A sys: [G, sys, a] */
   OP_UNGLUE,     /* unglue g at Glue A sys: [A, φ, sys, g] */
-  OP_PCTOR       /* a path constructor: the params, the fields, then one interval for each dimension */
+  OP_PCTOR,      /* a path constructor: the params, the fields, then one interval for each dimension */
+  OP_ELIM_FAMILY /* fold P case... x over a domain family: [P, the cases, x] */
 } Op;
 
 /* The instance of pure, map and bind (former F5). */
@@ -94,7 +95,7 @@ struct Core {
   uint32_t index;
   uint64_t nat;
   Op op;
-  /* OP_FAMILY, OP_FOLD_FAMILY: the family. OP_CTOR, OP_PROJ: the
+  /* OP_FAMILY, OP_FOLD_FAMILY, OP_ELIM_FAMILY: the family. OP_CTOR, OP_PROJ: the
      constructor. OP_PURE, OP_MAP, OP_BIND: the Carrier. */
   uint32_t inst;
   uint32_t field; /* OP_PROJ: the field number */

@@ -1,0 +1,4 @@
+table users (id : bigint key, name : text)
+
+protocol p where
+  dropSync users id name

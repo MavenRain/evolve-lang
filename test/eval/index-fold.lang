@@ -1,0 +1,18 @@
+-- A fold over an indexed family with no motive (S3, Q-S3-16 (b)): the
+-- motive is constant.
+hopFold : (n : ℕ) → (h : Hop n (natAdd n 1)) → ℕ
+hopFold n h = fold (λ (x : ℕ) → x) h
+
+hopFoldUp : (n : ℕ) → ℕ
+hopFoldUp n = hopFold n (up n)
+
+-- The length of a walk with two steps: the fold with no motive.
+walkLength : (a : ℕ) → (b : ℕ) → (w : Walk a b) → ℕ
+walkLength a b w = fold (λ (x : ℕ) → 0) (λ (x : ℕ) (y : ℕ) (z : ℕ) (u : Walk x y) (h : Hop y z) (ih : ℕ) → natAdd ih 1) w
+
+twoSteps : (n : ℕ) → ℕ
+twoSteps n = walkLength n (natAdd (natAdd n 1) 1) (stride n (natAdd n 1) (natAdd (natAdd n 1) 1) (stride n n (natAdd n 1) (stay n) (up n)) (up (natAdd n 1)))
+
+-- A dependent fold over a Hop: the motive names the indices.
+hopNext : (n : ℕ) → ℕ
+hopNext n = fold (λ (x : ℕ) (y : ℕ) (h : Hop x y) → ℕ) (λ (f : ℕ) → natAdd f 1) (up n)

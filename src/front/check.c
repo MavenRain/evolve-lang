@@ -4,12 +4,14 @@
    hint) or its type is inferred. Two types are equal when their normal forms
    are equal (front/eval.c). The checker writes core terms (front/core.h). */
 #include "front/check.h"
+#include "front/fmt.h"
 
 #include <string.h>
 
 #define CHECK_DEPTH_LIMIT 2000u
 #define SPINE_MAX 64u
 #define SHOW_MAX 512u
+#define PRE_MAX 8u /* the parameters of a domain pre: n m s t c d k */
 #define NAMES_MAX 64u
 #define UNIVERSE_MAX 2u
 #define PRINT_MAX 65536u
@@ -806,18 +808,200 @@ static int family_has_path(const Machine *m, uint32_t fam) {
   return 0;
 }
 
+static int telescope(const FamilyInfo *f);
+
+/* Retain the domains of a motive when quoting it, so a neutral fold
+   prints a motive whose type can be inferred again. */
+static const Core *elim_motive(Checker *c, const Value *v, const Value *type, uint32_t level) {
+  const Value *x;
+  const Core *dom, *body;
+  if (type == NULL || type->kind != VAL_PI)
+    return quote_value(c->m, level, v);
+  x = val_var(c->m, level);
+  dom = quote_value(c->m, level, type->dom);
+  body = elim_motive(c, apply_value(c->m, v, x), closure_apply(c->m, type, x), level + 1u);
+  return dom == NULL || body == NULL ? NULL : core_bind(c, CORE_LAM, type->name, dom, body);
+}
+
+static const Core *motive_type(Checker *c, const Value *st, const Value *univ);
+
+/* P at the indices of the family type T (the arguments after the P
+   parameters). */
+static const Value *motive_at(Machine *m, const Value *motive, const Value *t, uint32_t p) {
+  uint32_t i;
+  for (i = p; motive != NULL && t != NULL && i < t->argc; i++)
+    motive = apply_value(m, motive, t->args[i]);
+  return motive;
+}
+
+/* The type of the case of CTOR in fold P case... x over a scrutinee of
+   type ST (Q-S3-15 (a)): the fields (a telescope for an indexed family),
+   then one IH for each recursive field, to P at the indices of CTOR and at
+   CTOR applied to the fields. Each domain is a value at a fresh level,
+   quoted back. */
+static const Core *elim_case_type(Checker *c, uint32_t ctor, const Value *st, const Value *motive) {
+  Machine *m = c->m;
+  const CtorInfo *ci = &m->ctors[ctor];
+  const FamilyInfo *f = &m->families[ci->family];
+  uint32_t p = f->param_count;
+  uint32_t n = ci->field_count;
+  uint32_t level = c->level;
+  int dep = telescope(f);
+  const Core **doms = arena_alloc(m->arena, ((size_t)2u * n + 1u) * sizeof *doms);
+  const Value **vals = arena_alloc(m->arena, ((size_t)p + n + 1u) * sizeof *vals);
+  const Core **cargs = arena_alloc(m->arena, ((size_t)p + n + 1u) * sizeof *cargs);
+  const Value *res = motive;
+  const Core *body;
+  uint32_t h = 0;
+  uint32_t i;
+  if (doms == NULL || vals == NULL || cargs == NULL)
+    return nul(FAIL(c, "OOM", "out of memory"));
+  for (i = 0; i < p; i++) {
+    vals[i] = st->args[i];
+    cargs[i] = core_index(c, CORE_VAR, p + n - 1u - i);
+  }
+  for (i = 0; i < n; i++) {
+    doms[i] = quote_value(m, level + i, eval_core(m, env_of(c, vals, dep ? p + i : p), ci->fields[i].type));
+    vals[p + i] = val_var(m, level + i);
+    cargs[p + i] = core_index(c, CORE_VAR, n - 1u - i);
+  }
+  for (i = 0; i < n; i++) {
+    if (ci->fields[i].recursive) {
+      const Value *ft = eval_core(m, env_of(c, vals, dep ? p + i : p), ci->fields[i].type);
+      doms[n + h] = quote_value(m, level + n + h, apply_value(m, motive_at(m, motive, ft, p), vals[p + i]));
+      h++;
+    }
+  }
+  for (i = 0; i < f->index_count; i++)
+    res = apply_value(m, res, eval_core(m, env_of(c, vals, dep ? p + n : p), ci->indices[i]));
+  res = apply_value(m, res, eval_core(m, env_of(c, vals, p + n), core_op(c, OP_CTOR, ctor, 0, cargs, p + n)));
+  body = quote_value(m, level + n + h, res);
+  for (; h > 0u; h--)
+    body = core_bind(c, CORE_PI, "ih", doms[n + h - 1u], body);
+  for (i = n; i > 0u; i--)
+    body = core_bind(c, CORE_PI, ci->fields[i - 1u].name, doms[i - 1u], body);
+  return body;
+}
+
+/* The core of fold P case... x: OP_ELIM_FAMILY with the args P, the cases
+   from argument BASE on, and the scrutinee S of type ST. The type is P at
+   the indices of ST and at S. */
+static const Core *elim_family(Call *k, const Core *pc, const Value *pv, uint32_t base, const Core *s, const Value *st) {
+  Checker *c = k->c;
+  Machine *m = c->m;
+  const FamilyInfo *f = &m->families[st->inst];
+  const Core **cores = arena_alloc(m->arena, ((size_t)f->ctor_count + 3u) * sizeof *cores);
+  uint32_t j;
+  if (cores == NULL)
+    return nul(FAIL(c, "OOM", "out of memory"));
+  if (pc == NULL || pv == NULL)
+    return NULL;
+  cores[0] = elim_motive(c, pv, here(c, motive_type(c, st, val_univ(m, 0))), c->level);
+  if (cores[0] == NULL)
+    return NULL;
+  for (j = 0; j < f->ctor_count; j++) {
+    cores[j + 1u] = check(c, k->args[base + j], here(c, elim_case_type(c, f->first_ctor + j, st, pv)));
+    if (cores[j + 1u] == NULL)
+      return NULL;
+  }
+  cores[f->ctor_count + 1u] = s;
+  k->used = base + f->ctor_count + 1u;
+  k->type = apply_value(m, motive_at(m, pv, st, f->param_count), here(c, s));
+  return core_op(c, OP_ELIM_FAMILY, st->inst, 0, cores, f->ctor_count + 2u);
+}
+
+/* The family of a motive type (i1 : I1) → ... → (ik : Ik) → F p i... →
+   Type l (Q-S3-14 (a)), with *UNIV the universe; else NO_FAMILY. */
+static uint32_t motive_family(Checker *c, const Value *t, const Value **univ) {
+  Machine *m = c->m;
+  uint32_t d;
+  for (d = 0; t != NULL && t->kind == VAL_PI; d++) {
+    const Value *cod = closure_apply(m, t, val_var(m, c->level + d));
+    if (val_is(t->dom, OP_FAMILY) && m->families[t->dom->inst].index_count == d && cod != NULL && cod->kind == VAL_UNIV) {
+      *univ = cod;
+      return t->dom->inst;
+    }
+    t = cod;
+  }
+  return NO_FAMILY;
+}
+
+/* The motive type over the family type ST: (i : I)... → F p i... → UNIV. */
+static const Core *motive_type(Checker *c, const Value *st, const Value *univ) {
+  Machine *m = c->m;
+  const FamilyInfo *f = &m->families[st->inst];
+  uint32_t p = f->param_count;
+  uint32_t n = f->index_count;
+  const Core **args = arena_alloc(m->arena, ((size_t)p + n + 1u) * sizeof *args);
+  const Core *body;
+  uint32_t i;
+  if (args == NULL)
+    return nul(FAIL(c, "OOM", "out of memory"));
+  for (i = 0; i < p; i++)
+    args[i] = quote_value(m, c->level + n, st->args[i]);
+  for (i = 0; i < n; i++)
+    args[p + i] = core_index(c, CORE_VAR, n - 1u - i);
+  body = core_bind(c, CORE_PI, "x", core_op(c, OP_FAMILY, st->inst, 0, args, p + n), quote_value(m, c->level + n + 1u, univ));
+  for (i = n; i > 0u; i--)
+    body = core_bind(c, CORE_PI, "i", quote_value(m, c->level + i - 1u, eval_core(m, env_of(c, st->args, p), f->index_types[i - 1u])), body);
+  return body;
+}
+
+/* fold P case... x (Q-S3-14 (a)): argument 0 is a motive over FAM, the
+   scrutinee is argument ctor_count + 1. */
+static const Core *fold_motive(Call *k, const Core *pc, const Value *pt, uint32_t fam, const Value *univ) {
+  Checker *c = k->c;
+  const FamilyInfo *f = &c->m->families[fam];
+  const Value *st = NULL;
+  const Core *s;
+  if (family_has_path(c->m, fam))
+    return nul(FAIL(c, "DOMAIN_FAMILY", "fold over %s is refused: a fold over a higher inductive family is not in S3", f->name));
+  s = infer(c, k->args[f->ctor_count + 1u], &st);
+  if (s == NULL)
+    return NULL;
+  if (!val_is(st, OP_FAMILY) || st->inst != fam)
+    return nul(FAIL(c, "TYPE_MISMATCH", "the motive of this fold is over %s, but its scrutinee has the type %s", f->name, show(c, st)));
+  if (!expect(c, pt, here(c, motive_type(c, st, univ))))
+    return NULL;
+  return elim_family(k, pc, here(c, pc), 1u, s, st);
+}
+
+/* fold case... x over an indexed family (Q-S3-16 (b)): the constant motive
+   λ i... x → RES and the case layout of fold P (Q-S3-19 (a)). */
+static const Core *fold_const(Call *k, const Core *s, const Value *st) {
+  Checker *c = k->c;
+  const FamilyInfo *f = &c->m->families[st->inst];
+  const Value *res = k->hint;
+  const Core *pc;
+  uint32_t i;
+  if (res == NULL && c->m->ctors[f->first_ctor].field_count == 0u && infer(c, k->args[0], &res) == NULL)
+    return NULL;
+  if (res == NULL)
+    return nul(FAIL(c, "TYPE_INFER", "fold over %s needs a declared result type here", f->name));
+  pc = quote_value(c->m, c->level + f->index_count + 1u, res);
+  for (i = 0; i <= f->index_count; i++)
+    pc = core_bind(c, CORE_LAM, "_", NULL, pc);
+  return elim_family(k, pc, here(c, pc), 0u, s, st);
+}
+
 static const Core *rule_fold(Call *k) {
   Checker *c = k->c;
+  const Value *pt = NULL;
+  const Value *univ = NULL;
+  const Core *pc = try_infer(c, k->args[0], &pt);
+  uint32_t mf = pc == NULL ? NO_FAMILY : motive_family(c, pt, &univ);
   const Value *st = NULL;
-  const Core *s = try_infer(c, k->args[k->argc - 1u], &st);
-  uint32_t fam = val_is(st, OP_FAMILY) ? st->inst : NO_FAMILY;
-  if (s != NULL && fam != NO_FAMILY && c->m->families[fam].index_count > 0u)
-    return nul(FAIL(c, "DOMAIN_FAMILY", "fold over %s is not in S2: a fold over an indexed family needs a dependent eliminator (S3)", c->m->families[fam].name));
+  const Core *s;
+  uint32_t fam;
+  if (mf != NO_FAMILY && k->argc >= c->m->families[mf].ctor_count + 2u)
+    return fold_motive(k, pc, pt, mf, univ);
+  s = try_infer(c, k->args[k->argc - 1u], &st);
+  fam = val_is(st, OP_FAMILY) ? st->inst : NO_FAMILY;
   if (s != NULL && fam != NO_FAMILY && family_has_path(c->m, fam))
-    return nul(FAIL(c, "DOMAIN_FAMILY", "fold over %s is not in S2: a fold over a higher inductive family needs a dependent eliminator (S3)", c->m->families[fam].name));
+    return nul(FAIL(c, "DOMAIN_FAMILY", "fold over %s is refused: a fold over a higher inductive family is not in S3", c->m->families[fam].name));
   if (s != NULL && fam != NO_FAMILY && c->m->families[fam].ctor_count + 1u == k->argc) {
     k->hint = k->outer;
-    return fold_family(k, s, st);
+    return c->m->families[fam].index_count > 0u ? fold_const(k, s, st) : fold_family(k, s, st);
   }
   if (s != NULL && k->argc == 3u && simple_scrutinee(st)) {
     k->hint = k->outer;
@@ -1677,7 +1861,6 @@ static const Dropped DROPPED[] = {
   {"first", "witness", "use witness", "S1"},
   {"second", "payload", "use payload", "S1"},
   {"List", NULL, "use a vector Fin n → A", "S1"},
-  {"nil", NULL, "use a vector Fin n → A", "S1"},
   {"cons", NULL, "use a vector Fin n → A", "S1"},
   {"filter", NULL, "no core name replaces it", "S1"},
   {"unfold", NULL, "no core name replaces it before S2", "S1"},
@@ -2657,21 +2840,26 @@ static int cg_names(Cogen *g) {
   return g->pos != NULL && g->here != NULL && g->walk != NULL && g->A != NULL && g->S != NULL && g->o != NULL && g->seed != NULL && g->p != NULL && g->s != NULL && g->ih != NULL && g->e != NULL && g->x != NULL;
 }
 
-/* Before each generated declaration: the state of check_program for a new
-   declaration (cocell_shape pushed the parameter and the fields), then
-   the name check. */
-static int cg_start(const Cogen *g, const char *name) {
-  Checker *c = g->c;
+/* The state of check_program for a new declaration. */
+static void cg_reset(Checker *c) {
   c->scope = NULL;
   c->env = NULL;
   c->level = 0;
   c->depth = 0;
   c->self = NO_FAMILY;
+}
+
+/* Before each generated declaration: the state of check_program for a new
+   declaration (cocell_shape pushed the parameter and the fields), then
+   the name check. */
+static int cg_start(const Cogen *g, const char *name) {
+  Checker *c = g->c;
+  cg_reset(c);
   c->m->def = name;
   return name == NULL ? FAIL(c, "OOM", "out of memory") : name_free(c, name);
 }
 
-static int cg_def(const Cogen *g, const char *name, const Term *type, const Term *body) {
+static int cg_def_origin(const Cogen *g, Origin origin, const char *name, const Term *type, const Term *body) {
   Decl d;
   if (type == NULL || body == NULL)
     return FAIL(g->c, "OOM", "out of memory");
@@ -2679,13 +2867,17 @@ static int cg_def(const Cogen *g, const char *name, const Term *type, const Term
     return 0;
   memset(&d, 0, sizeof d);
   d.kind = DECL_DEF;
-  d.origin = ORIGIN_DOMAIN;
+  d.origin = origin;
   d.line = d.end_line = g->d->line;
   d.col = d.end_col = g->d->col;
   d.name = name;
   d.type = type;
   d.body = body;
   return check_def(g->c, &d);
+}
+
+static int cg_def(const Cogen *g, const char *name, const Term *type, const Term *body) {
+  return cg_def_origin(g, ORIGIN_DOMAIN, name, type, body);
 }
 
 /* The label type D_f_E, the twin of intent-lang check_label: its closed
@@ -2894,6 +3086,541 @@ static int check_cofamily(Checker *c, const Decl *d) {
   return cg_walk(&g) && cg_corec(&g);
 }
 
+/* The program forms (S3 U2). Each table, app and protocol elaborates at
+   its declaration to ORIGIN_PROGRAM definitions (Q-S3-23 (a)). The scan
+   gives m, the tables in order, and n, the table columns in order, then
+   each addColumn column of each protocol at its first use. */
+typedef struct {
+  const char *table;
+  const FormName *name;
+  const FormName *type;
+  uint32_t owner;
+  int key;
+  int added; /* only an addColumn names it */
+} FormCol;
+
+typedef struct {
+  const Decl **tables;
+  uint32_t m;
+  FormCol *cols;
+  uint32_t n;
+} Forms;
+
+/* The step words: the column names after the table, a type (addColumn),
+   a batch size (backfill). deploy and retire name an app and have no
+   post State. */
+typedef struct {
+  const char *word, *post;
+  uint32_t cols;
+  int type, batch;
+} StepForm;
+
+static const StepForm STEP_FORMS[] = {
+  {"addColumn", "postAddColumn", 1, 1, 0},
+  {"installSync", "postInstallSync", 2, 0, 0},
+  {"dropSync", "postDropSync", 2, 0, 0},
+  {"backfill", "postBackfill", 2, 0, 1},
+  {"deploy", NULL, 0, 0, 0},
+  {"retire", NULL, 0, 0, 0},
+  {"dropColumn", "postDropColumn", 1, 0, 0},
+  {"addNotNullCheck", "postAddNotNullCheck", 1, 0, 0},
+  {"validate", "postValidate", 1, 0, 0},
+  {"setNotNull", "postSetNotNull", 1, 0, 0},
+  {"dropCheck", "postDropCheck", 1, 0, 0}
+};
+
+static const char *const APP_WORDS[3] = {"reads", "writes", "inserts"};
+
+static const StepForm *step_form(const char *word) {
+  size_t i;
+  for (i = 0; i < sizeof STEP_FORMS / sizeof STEP_FORMS[0]; i++)
+    if (strcmp(STEP_FORMS[i].word, word) == 0)
+      return &STEP_FORMS[i];
+  return NULL;
+}
+
+static uint32_t form_table(const Forms *f, const char *name) {
+  uint32_t j;
+  for (j = 0; j < f->m; j++)
+    if (strcmp(f->tables[j]->name, name) == 0)
+      return j;
+  return UINT32_MAX;
+}
+
+static uint32_t form_col(const Forms *f, uint32_t t, const char *name) {
+  uint32_t j;
+  for (j = 0; j < f->n; j++)
+    if (f->cols[j].owner == t && strcmp(f->cols[j].name->text, name) == 0)
+      return j;
+  return UINT32_MAX;
+}
+
+static int forms_scan(Checker *c, Forms *f) {
+  const DeclList *ds = c->decls;
+  size_t tables = 0, cols = 0, i, k;
+  for (i = 0; i < ds->count; i++) {
+    const Decl *d = &ds->items[i];
+    tables += d->kind == DECL_TABLE;
+    cols += d->kind == DECL_TABLE || d->kind == DECL_PROTOCOL ? d->item_count : 0u;
+  }
+  memset(f, 0, sizeof *f);
+  f->tables = arena_alloc(c->m->arena, (tables + 1u) * sizeof *f->tables);
+  f->cols = arena_alloc(c->m->arena, (cols + 1u) * sizeof *f->cols);
+  if (f->tables == NULL || f->cols == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  for (i = 0; i < ds->count; i++)
+    if (ds->items[i].kind == DECL_TABLE)
+      f->tables[f->m++] = &ds->items[i];
+  for (i = 0; i < f->m; i++)
+    for (k = 0; k < f->tables[i]->item_count; k++) {
+      const FormItem *it = &f->tables[i]->items[k];
+      FormCol col = {f->tables[i]->name, &it->names[0], &it->names[1], (uint32_t)i, it->word != NULL, 0};
+      f->cols[f->n++] = col;
+    }
+  for (i = 0; i < ds->count; i++)
+    for (k = 0; ds->items[i].kind == DECL_PROTOCOL && k < ds->items[i].item_count; k++) {
+      const FormItem *it = &ds->items[i].items[k];
+      uint32_t t = strcmp(it->word, "addColumn") == 0 ? form_table(f, it->names[0].text) : UINT32_MAX;
+      if (t != UINT32_MAX && form_col(f, t, it->names[1].text) == UINT32_MAX) {
+        FormCol col = {f->tables[t]->name, &it->names[1], &it->names[2], t, 0, 1};
+        f->cols[f->n++] = col;
+      }
+    }
+  return 1;
+}
+
+/* An unknown name in a form, as written (Q-S3-25 (a)): the unknown_name
+   message, span at the name. */
+static Span form_span(const char *name, int line, int col) {
+  const char *p;
+  int width = 0;
+  for (p = name; *p != '\0'; p++) width += ((unsigned char)*p & 0xC0u) != 0x80u;
+  return (Span){NULL, line, col, line, col + width};
+}
+
+static int form_unknown(Checker *c, const char *name, int line, int col) {
+  if (name == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  return diag_fail_at(c->m->diag, "NAME_UNKNOWN", c->m->def, form_span(name, line, col), NULL, name, NULL, "unknown name %s", name);
+}
+
+/* renameColumn T C C' (Q-S3-29 (a)): refused before the names resolve,
+   the span at the step word (Q-S3-30 (a)). */
+static int form_no_rename(Checker *c, const Decl *d) {
+  size_t i;
+  for (i = 0; i < d->item_count; i++) {
+    const FormItem *it = &d->items[i];
+    if (strcmp(it->word, "renameColumn") == 0)
+      return diag_fail_at(c->m->diag, "REFUSE_RENAME_INPLACE", c->m->def, form_span(it->word, it->line, it->col), NULL, it->word, NULL, "renameColumn %s %s %s renames a column in place and breaks each live old version at once; use the five-stage protocol of examples/rename", it->names[0].text, it->names[1].text, it->names[2].text);
+  }
+  return 1;
+}
+
+static const Term *cg_nat(const Cogen *g, uint64_t n) {
+  Term *t = cg_node(g, TERM_NAT, NULL, NULL, NULL);
+  if (t != NULL)
+    t->nat = n;
+  return t;
+}
+
+/* NAME at a position of the form: a NAME_UNKNOWN or a refusal points
+   there. */
+static const Term *fm_var_at(const Cogen *g, const char *name, int line, int col) {
+  Term *t = cg_node(g, TERM_VAR, name, NULL, NULL);
+  if (t != NULL) {
+    t->line = line;
+    t->col = col;
+  }
+  return t;
+}
+
+static const Term *fm_name(const Cogen *g, const FormName *x) {
+  return fm_var_at(g, x->text, x->line, x->col);
+}
+
+/* F n m: a domain name at the program size. */
+static const Term *fm_nm(const Cogen *g, const Forms *f, const char *name) {
+  return cg_app(g, cg_app(g, cg_var(g, name), cg_nat(g, f->n)), cg_nat(g, f->m));
+}
+
+static const Term *fm_fin_type(const Cogen *g, uint64_t k) {
+  return cg_app(g, cg_var(g, "Fin"), cg_nat(g, k));
+}
+
+/* pack J refl: the Fin value J. */
+static const Term *fm_fin(const Cogen *g, uint64_t j) {
+  return cg_app(g, cg_app(g, cg_var(g, "pack"), cg_nat(g, j)), cg_var(g, "refl"));
+}
+
+/* flagIf (natEq (witness X) J) V_J (..), the last value with no test;
+   DFLT when there is no value. */
+static const Term *fm_choice(const Cogen *g, const char *x, const Term *const *v, uint32_t j, uint32_t count, const Term *dflt) {
+  const Term *test;
+  if (count == 0u)
+    return dflt;
+  if (j + 1u >= count)
+    return v[j];
+  test = cg_app(g, cg_app(g, cg_var(g, "natEq"), cg_app(g, cg_var(g, "witness"), cg_var(g, x))), cg_nat(g, j));
+  return cg_app(g, cg_app(g, cg_app(g, cg_var(g, "flagIf"), test), v[j]), fm_choice(g, x, v, j + 1u, count, dflt));
+}
+
+/* A Cols n value: pack K (λ (i : Fin K) → the K columns). With no column
+   and n = 0, Fin 0 is Fin n. */
+static const Term *fm_cols(const Cogen *g, const Forms *f, const Term *const *v, uint32_t count) {
+  const Term *dflt = f->n > 0u ? fm_fin(g, 0) : cg_var(g, "i");
+  return cg_app(g, cg_app(g, cg_var(g, "pack"), cg_nat(g, count)), cg_lam(g, "i", fm_fin_type(g, count), fm_choice(g, "i", v, 0, count, dflt)));
+}
+
+static const char *fm_join(const Cogen *g, const char *x, const char *sep, const char *y) {
+  return cg_join(g, cg_join(g, x, sep), y);
+}
+
+/* The binder of the ty field: c, primes, not a column type name. */
+static const char *fm_ty_binder(const Cogen *g, const Forms *f) {
+  const char *x = "c";
+  int clash = 1;
+  uint32_t j;
+  while (x != NULL && clash) {
+    clash = 0;
+    for (j = 0; j < f->n; j++)
+      clash |= strcmp(f->cols[j].type->text, x) == 0;
+    if (clash)
+      x = cg_join(g, x, "'");
+  }
+  return x;
+}
+
+/* The stage 0 State (Q-S3-22 (a)): a table column present, filled, its
+   type, the key notNull and the others nullable; a column that only an
+   addColumn names absent, not filled, the addColumn type, nullable; CHECK
+   absent; no sync. With n = 0 there is no table (each has a key), so the
+   owner and key fields are the identity. */
+static const Term *fm_start(const Cogen *g, const Forms *f) {
+  Arena *a = g->c->m->arena;
+  const Term **own = arena_alloc(a, (f->n + 1u) * sizeof *own);
+  const Term **in = arena_alloc(a, (f->n + 1u) * sizeof *in);
+  const Term **ty = arena_alloc(a, (f->n + 1u) * sizeof *ty);
+  const Term **nul = arena_alloc(a, (f->n + 1u) * sizeof *nul);
+  const Term **key = arena_alloc(a, (f->m + 1u) * sizeof *key);
+  const char *tx = fm_ty_binder(g, f);
+  const Term *fn = fm_fin_type(g, f->n), *nat = cg_var(g, "Nat"), *s;
+  uint32_t j;
+  if (own == NULL || in == NULL || ty == NULL || nul == NULL || key == NULL)
+    return NULL;
+  for (j = 0; j < f->n; j++) {
+    own[j] = fm_fin(g, f->cols[j].owner);
+    in[j] = cg_var(g, f->cols[j].added ? "false" : "true");
+    ty[j] = fm_name(g, f->cols[j].type);
+    nul[j] = cg_var(g, f->cols[j].key ? "notNull" : "nullable");
+    if (f->cols[j].key)
+      key[f->cols[j].owner] = fm_fin(g, j);
+  }
+  s = fm_nm(g, f, "mkState");
+  s = cg_app(g, s, cg_lam(g, "c", fn, fm_choice(g, "c", own, 0, f->n, cg_var(g, "c"))));
+  s = cg_app(g, s, cg_lam(g, "t", fm_fin_type(g, f->m), fm_choice(g, "t", key, 0, f->m, cg_var(g, "t"))));
+  s = cg_app(g, s, cg_lam(g, "c", fn, fm_choice(g, "c", in, 0, f->n, cg_var(g, "false"))));
+  s = cg_app(g, s, cg_lam(g, tx, fn, fm_choice(g, tx, ty, 0, f->n, cg_var(g, "bigint"))));
+  s = cg_app(g, s, cg_lam(g, "c", fn, fm_choice(g, "c", nul, 0, f->n, cg_var(g, "nullable"))));
+  s = cg_app(g, s, cg_lam(g, "c", fn, cg_var(g, "absent")));
+  s = cg_app(g, s, cg_lam(g, "x", nat, cg_lam(g, "y", nat, cg_var(g, "false"))));
+  return cg_app(g, s, cg_lam(g, "c", fn, fm_choice(g, "c", in, 0, f->n, cg_var(g, "true"))));
+}
+
+static Cogen fm_gen(Checker *c, const Decl *d) {
+  Cogen g;
+  memset(&g, 0, sizeof g);
+  g.c = c;
+  g.d = d;
+  return g;
+}
+
+/* table t (c : ty [key], ..): t : Fin m, and t_c : Fin n for each column.
+   Each column type checks as a ColType first. */
+static int check_table(Checker *c, const Decl *d) {
+  Cogen g = fm_gen(c, d);
+  Forms f;
+  uint64_t level = 0;
+  const Core *k;
+  const Value *ct;
+  uint32_t t, j;
+  if (!forms_scan(c, &f))
+    return 0;
+  k = check_type_at(c, cg_var(&g, "ColType"), &level, 0);
+  if (k == NULL)
+    return 0;
+  ct = here(c, k);
+  for (j = 0; j < d->item_count; j++)
+    if (check(c, fm_name(&g, &d->items[j].names[1]), ct) == NULL)
+      return 0;
+  t = form_table(&f, d->name);
+  if (!cg_def_origin(&g, ORIGIN_PROGRAM, d->name, fm_fin_type(&g, f.m), fm_fin(&g, t)))
+    return 0;
+  for (j = 0; j < f.n; j++)
+    if (f.cols[j].owner == t && !f.cols[j].added && !cg_def_origin(&g, ORIGIN_PROGRAM, fm_join(&g, d->name, "_", f.cols[j].name->text), fm_fin_type(&g, f.n), fm_fin(&g, j)))
+      return 0;
+  return 1;
+}
+
+/* app a (word t.c, ..): a : App n, the reads, writes and inserts Cols in
+   the item order (Q-S3-26 (a)). */
+static int check_app_form(Checker *c, const Decl *d) {
+  Cogen g = fm_gen(c, d);
+  Forms f;
+  const Term **v = arena_alloc(c->m->arena, (d->item_count + 1u) * sizeof *v);
+  uint32_t *col = arena_alloc(c->m->arena, (d->item_count + 1u) * sizeof *col);
+  const Term *cols[3];
+  uint32_t w, j, count;
+  if (v == NULL || col == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  if (!forms_scan(c, &f))
+    return 0;
+  for (j = 0; j < d->item_count; j++) {
+    const FormName *x = d->items[j].names;
+    uint32_t t = form_table(&f, x[0].text);
+    col[j] = t == UINT32_MAX ? UINT32_MAX : form_col(&f, t, x[1].text);
+    if (col[j] == UINT32_MAX)
+      return form_unknown(c, fm_join(&g, x[0].text, ".", x[1].text), x[0].line, x[0].col);
+  }
+  for (w = 0; w < 3u; w++) {
+    count = 0;
+    for (j = 0; j < d->item_count; j++)
+      if (strcmp(d->items[j].word, APP_WORDS[w]) == 0)
+        v[count++] = fm_fin(&g, col[j]);
+    cols[w] = fm_cols(&g, &f, v, count);
+  }
+  return cg_def_origin(&g, ORIGIN_PROGRAM, d->name, cg_app(&g, cg_var(&g, "App"), cg_nat(&g, f.n)), cg_app(&g, cg_app(&g, cg_var(&g, "pack"), cols[0]), cg_app(&g, cg_app(&g, cg_var(&g, "pack"), cols[1]), cols[2])));
+}
+
+/* HEAD n m S, then the table, the columns, the type or the batch size of
+   step IT (the argument order of the domain post and step). */
+static const Term *fm_step_args(const Cogen *g, const Forms *f, const char *head, const char *s, const StepForm *sf, const FormItem *it, const uint32_t *x) {
+  const Term *t = cg_app(g, cg_app(g, fm_nm(g, f, head), cg_var(g, s)), fm_fin(g, x[0]));
+  uint32_t j;
+  for (j = 0; j < sf->cols; j++)
+    t = cg_app(g, t, fm_fin(g, x[1u + j]));
+  if (sf->type)
+    t = cg_app(g, t, fm_name(g, &it->names[2]));
+  return sf->batch ? cg_app(g, t, cg_nat(g, it->nat)) : t;
+}
+
+/* (λ (x : TYPE) → x) T: T where a conjunct infers its type (witness c). */
+static const Term *fm_the(const Cogen *g, const Term *type, const Term *t) {
+  return cg_app(g, cg_lam(g, "x", type, cg_var(g, "x")), t);
+}
+
+/* The arguments of fm_step_args in ARG and the text of each in TEXT: S,
+   TABLE, TABLE.COL, the type, the batch size (none for n and m). Returns
+   the count. */
+static uint32_t fm_pre_args(const Cogen *g, const Forms *f, const char *s, const StepForm *sf, const FormItem *it, const uint32_t *x, const Term **arg, const char **text) {
+  const char *t = it->names[0].text;
+  char num[24];
+  uint32_t k = 4u, j;
+  arg[0] = cg_nat(g, f->n);
+  arg[1] = cg_nat(g, f->m);
+  arg[2] = cg_var(g, s);
+  arg[3] = fm_the(g, fm_fin_type(g, f->m), fm_fin(g, x[0]));
+  text[0] = text[1] = "";
+  text[2] = s;
+  text[3] = t;
+  for (j = 0; j < sf->cols; j++, k++) {
+    arg[k] = fm_the(g, fm_fin_type(g, f->n), fm_fin(g, x[1u + j]));
+    text[k] = fm_join(g, t, ".", it->names[1u + j].text);
+  }
+  if (sf->type) {
+    arg[k] = fm_name(g, &it->names[2]);
+    text[k++] = it->names[2].text;
+  }
+  if (sf->batch) {
+    snprintf(num, sizeof num, "%llu", (unsigned long long)it->nat);
+    arg[k] = cg_nat(g, it->nat);
+    text[k++] = cg_join(g, num, "");
+  }
+  return k;
+}
+
+/* The step as written: the word and the names, `backfill t c ← c' batch
+   N`. */
+static const char *fm_step_text(const Cogen *g, const FormItem *it) {
+  int is_backfill = strcmp(it->word, "backfill") == 0;
+  const char *s = it->word;
+  char num[24];
+  size_t j;
+  for (j = 0; j < it->name_count; j++)
+    s = fm_join(g, s, is_backfill && j == 2u ? " \xE2\x86\x90 " : " ", it->names[j].text);
+  snprintf(num, sizeof num, "%llu", (unsigned long long)it->nat);
+  return is_backfill ? fm_join(g, s, " batch ", num) : s;
+}
+
+/* T as written (canonical text; domain/domain.lang is canonical). */
+static const char *fm_text(const Cogen *g, const Term *t) {
+  FmtText out;
+  char *s;
+  fmt_text_init(&out, g->c->m->arena);
+  fmt_term(&out, t);
+  s = out.oom || out.len == 0u ? NULL : arena_alloc(g->c->m->arena, out.len + 1u);
+  if (s == NULL)
+    return NULL;
+  memcpy(s, out.data, out.len);
+  s[out.len] = '\0';
+  return s;
+}
+
+/* T with each parameter X[j] replaced by A[j], except under a binder of
+   X[j] (bit j of HIDE). */
+static const Term *fm_subst(const Cogen *g, const Term *t, const char *const *x, const Term *const *a, uint32_t count, uint32_t hide) {
+  Term *u;
+  uint32_t j, inner = hide;
+  if (t->kind == TERM_VAR) {
+    for (j = 0; j < count; j++)
+      if ((hide >> j & 1u) == 0u && strcmp(t->name, x[j]) == 0)
+        return a[j];
+    return t;
+  }
+  if (t->left == NULL && t->right == NULL)
+    return t;
+  u = arena_alloc(g->c->m->arena, sizeof *u);
+  if (u == NULL)
+    return NULL;
+  *u = *t;
+  for (j = 0; j < count; j++)
+    if (t->kind != TERM_APP && t->name != NULL && strcmp(t->name, x[j]) == 0)
+      inner |= 1u << j;
+  u->left = t->left == NULL ? NULL : fm_subst(g, t->left, x, a, count, hide);
+  u->right = t->right == NULL ? NULL : fm_subst(g, t->right, x, a, count, inner);
+  return (t->left != NULL && u->left == NULL) || (t->right != NULL && u->right == NULL) ? NULL : u;
+}
+
+/* The domain def clause NAME (front_load puts the domain before the
+   program). */
+static const Decl *fm_domain_def(const Checker *c, const char *name) {
+  size_t j;
+  for (j = 0; j < c->decl_index; j++) {
+    const Decl *e = &c->decls->items[j];
+    if (e->kind == DECL_DEF && e->origin == ORIGIN_DOMAIN && strcmp(e->name, name) == 0)
+      return e;
+  }
+  return NULL;
+}
+
+/* boolAnd A B */
+static int fm_is_and(const Term *t) {
+  return t->kind == TERM_APP && t->left->kind == TERM_APP && t->left->left->kind == TERM_VAR && strcmp(t->left->left->name, "boolAnd") == 0;
+}
+
+/* REFUSE_STEP_INDEX (Q-S3-28 (a)): Q is the first false conjunct; the
+   span at the step word (Q-S3-30 (a)); NAME the protocol. */
+static int fm_step_refuse(Checker *c, const Cogen *g, const Decl *d, size_t i, const char *s, const Term *q, const char *const *name, const char *const *text, uint32_t count) {
+  const FormItem *it = &d->items[i];
+  const char *conj = fm_text(g, q), *step = fm_step_text(g, it), *args = fm_join(g, name[2], " = ", text[2]);
+  uint32_t j;
+  for (j = 3u; j < count; j++)
+    args = fm_join(g, fm_join(g, args, ", ", name[j]), " = ", text[j]);
+  if (conj == NULL || step == NULL || args == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  c->m->def = d->name;
+  return diag_fail_at(c->m->diag, "REFUSE_STEP_INDEX", c->m->def, form_span(it->word, it->line, it->col), conj, "false", NULL, "step %zu (%s) is not legal at stage %s: %s is false (%s)", i + 1u, step, s, conj, args);
+}
+
+/* J1: the domain pre of step I + 1 at stage S. When it is false, the
+   first false boolAnd conjunct of the pre clause, its parameters replaced
+   by the arguments, gives REFUSE_STEP_INDEX. */
+static int fm_step_pre(Checker *c, const Cogen *g, const Forms *f, const Decl *d, size_t i, const char *s, const StepForm *sf, const uint32_t *x) {
+  const char *pre = cg_join(g, "pre", sf->post + 4), *name[PRE_MAX], *text[PRE_MAX];
+  const Term *arg[PRE_MAX], *t, *q = NULL;
+  const Decl *e;
+  const Value *v;
+  uint32_t count = fm_pre_args(g, f, s, sf, &d->items[i], x, arg, text), n = 0, j;
+  int found = 0;
+  for (t = cg_var(g, pre), j = 0; j < count; j++)
+    t = cg_app(g, t, arg[j]);
+  if (t == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  cg_reset(c);
+  v = here(c, check(c, t, bool_type(c)));
+  if (v == NULL || !val_is(v, OP_FALSE))
+    return v != NULL;
+  e = fm_domain_def(c, pre);
+  for (t = e == NULL ? NULL : e->body; t != NULL && t->kind == TERM_LAM && t->left == NULL && n < PRE_MAX; t = t->right)
+    name[n++] = t->name;
+  if (t == NULL || n != count)
+    return FAIL(c, "INTERNAL", "the domain clause %s does not take the %u arguments of step %zu", pre, count, i + 1u);
+  while (!found && t != NULL) {
+    const Term *u;
+    q = fm_is_and(t) ? t->left->right : t;
+    t = fm_is_and(t) ? t->right : NULL;
+    u = fm_subst(g, q, name, arg, count, 0u);
+    if (u == NULL)
+      return FAIL(c, "OOM", "out of memory");
+    v = here(c, check(c, u, bool_type(c)));
+    if (v == NULL)
+      return 0;
+    found = val_is(v, OP_FALSE);
+  }
+  if (!found)
+    return FAIL(c, "INTERNAL", "%s is false at step %zu, but no conjunct of it is false", pre, i + 1u);
+  return fm_step_refuse(c, g, d, i, s, q, name, text, count);
+}
+
+/* protocol p where steps: p_c : Fin n for each column that it adds first,
+   the stages p_0 .. p_k : State n m (one a step, Q-S3-27 (a)), and
+   p : Chain n m p_0 p_k, each step witness refl. */
+static int check_protocol(Checker *c, const Decl *d) {
+  Cogen g = fm_gen(c, d);
+  Forms f;
+  size_t k = d->item_count, i;
+  uint32_t *x = arena_alloc(c->m->arena, (3u * k + 1u) * sizeof *x);
+  const StepForm **sf = arena_alloc(c->m->arena, (k + 1u) * sizeof *sf);
+  const char *s0 = fm_join(&g, d->name, "_", "0"), *prev = s0;
+  const Term *chain;
+  if (x == NULL || sf == NULL || s0 == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  if (!form_no_rename(c, d) || !forms_scan(c, &f))
+    return 0;
+  for (i = 0; i < k; i++) {
+    const FormItem *it = &d->items[i];
+    uint32_t *xi = &x[3u * i], j;
+    sf[i] = step_form(it->word);
+    if (sf[i] == NULL)
+      return form_unknown(c, it->word, it->line, it->col);
+    xi[0] = sf[i]->post == NULL ? 0u : form_table(&f, it->names[0].text);
+    if (xi[0] == UINT32_MAX)
+      return form_unknown(c, it->names[0].text, it->names[0].line, it->names[0].col);
+    for (j = 0; j < sf[i]->cols; j++) {
+      xi[1u + j] = form_col(&f, xi[0], it->names[1u + j].text);
+      if (xi[1u + j] == UINT32_MAX)
+        return form_unknown(c, it->names[1u + j].text, it->names[1u + j].line, it->names[1u + j].col);
+    }
+  }
+  for (i = 0; i < k; i++) {
+    if (!sf[i]->type)
+      continue;
+    const FormCol *fc = &f.cols[x[3u * i + 1u]];
+    if (fc->name == &d->items[i].names[1] && !cg_def_origin(&g, ORIGIN_PROGRAM, fm_join(&g, fc->table, "_", fc->name->text), fm_fin_type(&g, f.n), fm_fin(&g, x[3u * i + 1u])))
+      return 0;
+  }
+  if (!cg_def_origin(&g, ORIGIN_PROGRAM, s0, fm_nm(&g, &f, "State"), fm_start(&g, &f)))
+    return 0;
+  chain = cg_app(&g, fm_nm(&g, &f, "nil"), cg_var(&g, s0));
+  for (i = 0; i < k; i++) {
+    const FormItem *it = &d->items[i];
+    char num[24];
+    const char *cur;
+    const Term *step;
+    if (sf[i]->post != NULL && !fm_step_pre(c, &g, &f, d, i, prev, sf[i], &x[3u * i]))
+      return 0;
+    snprintf(num, sizeof num, "%zu", i + 1u);
+    cur = fm_join(&g, d->name, "_", num);
+    step = sf[i]->post == NULL
+      ? cg_app(&g, cg_app(&g, fm_nm(&g, &f, it->word), cg_var(&g, prev)), fm_name(&g, &it->names[0]))
+      : cg_app(&g, fm_step_args(&g, &f, it->word, prev, sf[i], it, &x[3u * i]), fm_var_at(&g, "refl", it->line, it->col));
+    if (cur == NULL || !cg_def_origin(&g, ORIGIN_PROGRAM, cur, fm_nm(&g, &f, "State"), sf[i]->post == NULL ? cg_var(&g, prev) : fm_step_args(&g, &f, sf[i]->post, prev, sf[i], it, &x[3u * i])))
+      return cur == NULL ? FAIL(c, "OOM", "out of memory") : 0;
+    chain = cg_app(&g, cg_app(&g, cg_app(&g, cg_app(&g, cg_app(&g, fm_nm(&g, &f, "snoc"), cg_var(&g, s0)), cg_var(&g, prev)), cg_var(&g, cur)), chain), step);
+    prev = cur;
+  }
+  return cg_def_origin(&g, ORIGIN_PROGRAM, d->name, cg_app(&g, cg_app(&g, fm_nm(&g, &f, "Chain"), cg_var(&g, s0)), cg_var(&g, prev)), chain);
+}
+
 static int check_decl(Checker *c, const Decl *d) {
   if (program_data(d))
     return FAIL(c, "REFUSE_DATA", "a program cannot declare data with no type argument; a base type comes only from domain/domain.lang (rule R2)");
@@ -2905,6 +3632,12 @@ static int check_decl(Checker *c, const Decl *d) {
     return 0;
   if (d->kind == DECL_COFAMILY)
     return check_cofamily(c, d);
+  if (d->kind == DECL_TABLE)
+    return check_table(c, d);
+  if (d->kind == DECL_APP)
+    return check_app_form(c, d);
+  if (d->kind == DECL_PROTOCOL)
+    return check_protocol(c, d);
   return d->kind == DECL_FAMILY ? check_family(c, d) : check_def(c, d);
 }
 
@@ -2930,6 +3663,11 @@ int check_program(Arena *arena, const DeclList *decls, Machine *m, Diag *diag) {
       ctors += 1u + f;
       defs += 3u + 2u * f;
     }
+    /* A table gives at most one more definition a column; a protocol at
+       most one a column that it adds, one a stage and stage 0
+       (check_table, check_protocol). */
+    if (d->kind == DECL_TABLE || d->kind == DECL_PROTOCOL)
+      defs += 2u * d->item_count + 1u;
   }
   m->defs = arena_alloc(arena, (defs + 1u) * sizeof *m->defs);
   m->families = arena_alloc(arena, (families + 1u) * sizeof *m->families);
