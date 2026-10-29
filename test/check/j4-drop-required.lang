@@ -1,0 +1,11 @@
+-- J4 (Q-S4-13 (a)): v1 is the only live version at the drop of name.
+table users (name : text, id : bigint key)
+
+app v1 (reads users.name, reads users.id, writes users.name, inserts users.id, inserts users.name)
+
+protocol p where
+  addColumn users display_name text
+  installSync users display_name name
+  backfill users display_name ← name batch 1000
+  dropSync users display_name name
+  dropColumn users name

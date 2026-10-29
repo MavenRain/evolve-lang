@@ -1,0 +1,168 @@
+-- The J2 verdicts (S4 U1): compat on the rename of PLAN 4.6. v1 reads,
+-- writes and inserts users.name; v3 does the same on users.display_name.
+-- Each app also inserts the key users.id, which is notNull (J2.4, Q-S4-8
+-- (a)). The protocol `base` gives the stages 0 and 1. The stages 2 .. 7 and
+-- their chains are written here by hand, one step a stage (Q-S3-27 (a)):
+-- installSync, backfill, deploy v3, retire v1, dropSync, dropColumn users
+-- name. The PLAN 4.6 stage 5 is the stages 5 .. 7 here.
+table users (name : text, id : bigint key)
+
+app v1 (reads users.name, writes users.name, inserts users.id, inserts users.name)
+
+protocol base where
+  addColumn users display_name text
+
+usersTbl : Fin 1
+usersTbl = pack 0 refl
+
+-- v3 is not a program app: at stage 0 of base it would be live and
+-- refused. Its columns have the ℕ form of fm_cols (Q-S4-9 (a)).
+v3 : App 3
+v3 = pack (pack 1 (λ (j : ℕ) → users_display_name)) (pack (pack 1 (λ (j : ℕ) → users_display_name)) (pack 2 (λ (j : ℕ) → flagIf (natEq j 0) users_id users_display_name)))
+
+-- The program columns, in the code order.
+programCols : Cols 3
+programCols = pack 3 (λ (j : ℕ) → flagIf (natEq j 0) users_name (flagIf (natEq j 1) users_id users_display_name))
+
+-- The live sets (Q-S4-2 (a)): v1 at the stages 0 .. 3, v1 and v3 at the
+-- stage 4, v3 at the stages 5 .. 7.
+live1 : Live 3
+live1 = pack 1 (λ (j : ℕ) → v1)
+
+live13 : Live 3
+live13 = pack 2 (λ (j : ℕ) → flagIf (natEq j 0) v1 v3)
+
+live3 : Live 3
+live3 = pack 1 (λ (j : ℕ) → v3)
+
+stage2 : State 3 1
+stage2 = postInstallSync 3 1 base_1 usersTbl users_name users_display_name
+
+stage3 : State 3 1
+stage3 = postBackfill 3 1 stage2 usersTbl users_display_name users_name 1000
+
+stage6 : State 3 1
+stage6 = postDropSync 3 1 stage3 usersTbl users_name users_display_name
+
+stage7 : State 3 1
+stage7 = postDropColumn 3 1 stage6 usersTbl users_name
+
+chain0 : Chain 3 1 base_0 base_0
+chain0 = nil 3 1 base_0
+
+chain2 : Chain 3 1 base_0 stage2
+chain2 = snoc 3 1 base_0 base_1 stage2 base (installSync 3 1 base_1 usersTbl users_name users_display_name refl)
+
+chain3 : Chain 3 1 base_0 stage3
+chain3 = snoc 3 1 base_0 stage2 stage3 chain2 (backfill 3 1 stage2 usersTbl users_display_name users_name 1000 refl)
+
+chain4 : Chain 3 1 base_0 stage3
+chain4 = snoc 3 1 base_0 stage3 stage3 chain3 (deploy 3 1 stage3 v3)
+
+chain5 : Chain 3 1 base_0 stage3
+chain5 = snoc 3 1 base_0 stage3 stage3 chain4 (retire 3 1 stage3 v1)
+
+chain6 : Chain 3 1 base_0 stage6
+chain6 = snoc 3 1 base_0 stage3 stage6 chain5 (dropSync 3 1 stage3 usersTbl users_name users_display_name refl)
+
+chain7 : Chain 3 1 base_0 stage7
+chain7 = snoc 3 1 base_0 stage6 stage7 chain6 (dropColumn 3 1 stage6 usersTbl users_name refl)
+
+-- The PLAN 4.6 verdicts of v1 and v3 at each stage.
+v1At0 : Verdict 3 1
+v1At0 = compat 3 1 base_0 base_0 chain0 live1 programCols v1
+
+v3At0 : Verdict 3 1
+v3At0 = compat 3 1 base_0 base_0 chain0 live1 programCols v3
+
+v1At1 : Verdict 3 1
+v1At1 = compat 3 1 base_0 base_1 base live1 programCols v1
+
+v3At1 : Verdict 3 1
+v3At1 = compat 3 1 base_0 base_1 base live1 programCols v3
+
+v1At2 : Verdict 3 1
+v1At2 = compat 3 1 base_0 stage2 chain2 live1 programCols v1
+
+v3At2 : Verdict 3 1
+v3At2 = compat 3 1 base_0 stage2 chain2 live1 programCols v3
+
+v1At3 : Verdict 3 1
+v1At3 = compat 3 1 base_0 stage3 chain3 live1 programCols v1
+
+v3At3 : Verdict 3 1
+v3At3 = compat 3 1 base_0 stage3 chain3 live1 programCols v3
+
+v1At4 : Verdict 3 1
+v1At4 = compat 3 1 base_0 stage3 chain4 live13 programCols v1
+
+v3At4 : Verdict 3 1
+v3At4 = compat 3 1 base_0 stage3 chain4 live13 programCols v3
+
+v1At5 : Verdict 3 1
+v1At5 = compat 3 1 base_0 stage3 chain5 live3 programCols v1
+
+v3At5 : Verdict 3 1
+v3At5 = compat 3 1 base_0 stage3 chain5 live3 programCols v3
+
+-- J2.2: after dropSync, v3 writes display_name with no sync to name, so
+-- the read of name by v1 is stale.
+v1At6 : Verdict 3 1
+v1At6 = compat 3 1 base_0 stage6 chain6 live3 programCols v1
+
+v3At6 : Verdict 3 1
+v3At6 = compat 3 1 base_0 stage6 chain6 live3 programCols v3
+
+v1At7 : Verdict 3 1
+v1At7 = compat 3 1 base_0 stage7 chain7 live3 programCols v1
+
+v3At7 : Verdict 3 1
+v3At7 = compat 3 1 base_0 stage7 chain7 live3 programCols v3
+
+-- J2.2: the read of name with the sync on, and with the sync dropped.
+freshSynced : Bool
+freshSynced = fresh 3 1 stage3 live3 users_name
+
+freshUnsynced : Bool
+freshUnsynced = fresh 3 1 stage6 live3 users_name
+
+-- J3: chain7 has two barriers, deploy v3 (step 4) and retire v1 (step 5).
+segmentAt3 : ℕ
+segmentAt3 = segments 3 1 base_0 stage7 chain7 3
+
+segmentAt4 : ℕ
+segmentAt4 = segments 3 1 base_0 stage7 chain7 4
+
+segmentAt5 : ℕ
+segmentAt5 = segments 3 1 base_0 stage7 chain7 5
+
+-- J2.4: an app that inserts into users but not its key users.id.
+noKey : App 3
+noKey = pack (pack 1 (λ (j : ℕ) → users_name)) (pack (pack 1 (λ (j : ℕ) → users_name)) (pack 1 (λ (j : ℕ) → users_name)))
+
+noKeyAt0 : Verdict 3 1
+noKeyAt0 = compat 3 1 base_0 base_0 chain0 live1 programCols noKey
+
+-- J2.4 on a state where display_name is notNull: the sync gives it a value
+-- on an insert of name by v1; with the sync dropped, nothing does. The
+-- chain is nil, so J2.3 and the runtime clause do not apply.
+strict : State 3 1
+strict = postSetNotNull 3 1 (postValidate 3 1 (postAddNotNullCheck 3 1 stage3 usersTbl users_display_name) usersTbl users_display_name) usersTbl users_display_name
+
+strictUnsynced : State 3 1
+strictUnsynced = postDropSync 3 1 strict usersTbl users_name users_display_name
+
+v1Strict : Verdict 3 1
+v1Strict = compat 3 1 strict strict (nil 3 1 strict) live1 programCols v1
+
+v1StrictUnsynced : Verdict 3 1
+v1StrictUnsynced = compat 3 1 strictUnsynced strictUnsynced (nil 3 1 strictUnsynced) live1 programCols v1
+
+-- L1 and L4 are not vacuous (Q-S4-7 (a)): when v1 is live at each stage of
+-- the rename, v1 reads users.name after `dropColumn users name`, so
+-- `accepts` and `dropSafe` give false.
+acceptsV1Live : Bool
+acceptsV1Live = accepts 3 1 base_0 stage7 chain7 (λ (i : ℕ) → live1) programCols
+
+dropSafeV1Live : Bool
+dropSafeV1Live = dropSafe 3 1 base_0 stage7 chain7 (λ (i : ℕ) → live1)

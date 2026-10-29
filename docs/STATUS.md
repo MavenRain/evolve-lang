@@ -724,3 +724,157 @@ These items are open for the USER. S3 does not change them.
   files. `StreamBisim` goes to S6 with `Stream KeyRange` and L2.
 - Q-S3-1 to Q-S3-32 are RULED. Q-S2b-1 to Q-S2b-8 stay open (PLAN
   section 11).
+
+## S4: the checker (compat, J4, J5, the laws)
+
+S4 adds the compatibility checker. The domain gets the judgement
+`compat` (J2), the live set of each stage and the decisions for the laws.
+`src/front/check.c` drives the checker over the chain of each `protocol`
+in chain order: J1, the drop check, J5 and J4 (Q-S4-1 (a)). S4 adds the
+6 codes of PLAN 4.4 and the demo `examples/rename.lang`. SPEC.md sections
+5 and 6 give the checker.
+
+### Source
+- No port source: the PLAN port source table has no S4 row. S4 changes
+  15 files and adds 19 files. It removes no file.
+
+### Units
+- U0, the State and the codes: the 9th `State` field
+  `link : ℕ → ℕ → Bool` (`putLink`). `postInstallSync` and
+  `postBackfill` set it, and no step clears it (Q-S4-3 (a)). New types:
+  `Code` (8 codes, in the PLAN 4.4 order), `Fact n m` (only
+  `backfillDone`, Q-S4-4 (a)), `Verdict n m`, `LockMode` (5 modes) and
+  `ScanClass` (4 classes). `lockOf` and `scanOf` give the lock and the
+  scan class of each of the 11 steps (Q-S4-6 (a), F-U0-2). `fm_start`
+  gets a 9th argument. New test: `test/eval/checker.lang`. In
+  `test/check/cell-list.lang` the constructor `link` becomes `more`
+  (F-U0-1: the name clash with the new field).
+- U1, J2 (`compat`): `Cols n` is `(k : ℕ) × (ℕ → Fin n)` (Q-S4-9 (a)).
+  `src/front/check.c` gets `fm_pick`, `fm_cols` (default `pack 0 refl`,
+  Q-S4-12 (a)) and `form_live`. The domain gets `Live` and, among other
+  functions, `readsOf`, `writesOf`, `insertsOf`, `isBarrier`,
+  `segments`, `phase`, `fresh`, `needsValue`, `getsValue`, `runtimeOf`
+  and `compat` with the clauses J2.1 to J2.4 (Q-S4-2, Q-S4-8, Q-S4-10,
+  Q-S4-11 (a)). New test:
+  `test/eval/compat.lang` (the PLAN 4.6 table).
+- U2, J4 and J5 in the C driver: among other
+  functions, `fm_refusal`, `fm_j4_refuse`, `fm_drop_required`,
+  `fm_lock_scan` and `fm_stage`. `check_protocol`
+  makes the live set before the step loop. It runs J4 at stage 0 on
+  `nil`. Then, for each step, it runs the drop check
+  (`REFUSE_DROP_REQUIRED`), J5 (`REFUSE_LOCK_SCAN`) and J4 (Q-S4-1,
+  Q-S4-5, Q-S4-13, Q-S4-14 (a)). The 6 codes have their rows in
+  `docs/DIAGNOSTICS.md` and 6 json fixtures. New tests: the 6
+  `test/check/j4-*.lang` files. Q-S4-8 (a) edits the test protocols that
+  S4 refuses: `test/eval/steps.lang` (the inserts, and `retire v0`
+  before `dropSync`) and `test/fmt/forms`.
+- U3, the demo: `examples/rename.lang` passes check, fmt, ir and wasm.
+  `test/check/rename-drop-early.lang` drops the old column early and
+  gets `REFUSE_STALE_READ` at checker stage 5 (Q-S4-13 (a)).
+- U4, the laws and the mutants: L5 is `test/eval/chain-laws.lang`
+  (`Path` proofs). L1, L4 and L6 are the domain decisions `accepts`,
+  `dropSafe` and `lockSafe` (Q-S4-7, Q-S4-16 (a)).
+  `examples/rename.lang` proves the three decisions on its protocol by
+  `refl` (Q-S4-15 (a)). `test/eval/checker.lang` proves them on each of
+  the 11 step forms (33 proofs) and has the negative
+  `lockSafeSetNotNullNoCheck`.
+  `test/eval/compat.lang` has the negatives `acceptsV1Live` and
+  `dropSafeV1Live`. The mutants M1 to M9.
+- U5, the docs: SPEC.md sections 5, 5.1, 5.2, 6 and 6.1; PLAN 2.2, 4.6,
+  5.1, 6.1 and the S4 row; the `README.md` status; and this section.
+
+### Gate counts against S3
+
+| Count | S3 (9595979) | S4 |
+|---|---|---|
+| examples | 11 | 12 |
+| parse refusals | 10 | 10 |
+| check refusals | 71 | 79 |
+| evals | 83 | 185 |
+| ir lowered | 11 | 12 |
+| wasm modules | 15 | 16 |
+| differential cases (0 mismatches) | 889 | 892 |
+| fmt canonical, non-canonical pairs | 134, 7 | 153, 7 |
+| json fixtures | 32 | 38 |
+| diagnostics codes (fixture, no fixture) | 45 (30, 15) | 51 (36, 15) |
+| cubical checks, round trips | 50, 29 | 52, 29 |
+
+The gate has 0 failures. The review, domain and diagnostic edit
+regressions pass.
+
+### Op values
+51 Op values. S4 adds no Op. `src/front/eval.c` and the kernel do not
+change.
+
+### Mutants
+M1 to M4 set one clause of `compat` (J2.1 to J2.4) to `true`. M5 removes
+the drop-required refusal. M6 changes the scan class of `setNotNull`. M7
+makes `addColumn` a barrier. M8 moves `fm_stage` before the drop and
+lock checks. M9 changes the phase of the `runtime` verdict. These 9
+mutants are all KILLED.
+
+| Mutant | Site | Result |
+|---|---|---|
+| M1 | `compat`: the J2.1 present clause changed to `true` | KILLED by `test/check/j4-missing-column.lang` (got `REFUSE_UNFILLED_READ`); also the evals `v3At0`, `v1At7` and `acceptsV1Live`, the json compare and `test/json/REFUSE_MISSING_COLUMN.lang` |
+| M2 | `compat`: the J2.2 fresh clause changed to `true` | KILLED by `test/check/j4-stale-read.lang` (got `REFUSE_DROP_REQUIRED` at stage 6); also `test/check/rename-drop-early.lang`, the eval `v1At6`, the json compare and `test/json/REFUSE_STALE_READ.lang` |
+| M3 | `compat`: the J2.3 filled clause changed to `true` | KILLED by `test/check/j4-unfilled-read.lang` (got exit 0); also the evals `v3At1` and `v3At2`, the json compare and `test/json/REFUSE_UNFILLED_READ.lang` |
+| M4 | `compat`: the J2.4 insert clause changed to `true` | KILLED by `test/check/j4-null-insert.lang` (got exit 0); also the evals `noKeyAt0` and `v1StrictUnsynced`, the json compare and `test/json/REFUSE_NULL_INSERT.lang` |
+| M5 | `fm_drop_required` in `src/front/check.c`: `if (strcmp(` changed to `if (0 && strcmp(` (no drop-required refusal) | KILLED by `test/check/j4-drop-required.lang` (got `REFUSE_MISSING_COLUMN` at stage 5); also the json compare and `test/json/REFUSE_DROP_REQUIRED.lang` |
+| M6 | `scanOf` of `setNotNull`: always `metadata` | KILLED by `test/check/j4-lock-scan.lang` (got exit 0); also the evals `scanSetNotNullNoCheck`, `scanSetNotNullNotValid` and `lockSafeSetNotNullNoCheck`, the json compare and `test/json/REFUSE_LOCK_SCAN.lang` |
+| M7 | `isBarrier` of `addColumn`: `false` changed to `true` | KILLED by the evals `segmentAt3`, `segmentAt4` and `segmentAt5` in `test/eval/compat.lang` (got 1, 2, 3) |
+| M8 | `check_protocol`: `fm_stage` before `fm_drop_required` and `fm_lock_scan` | KILLED by `test/check/j4-drop-required.lang` (got `REFUSE_MISSING_COLUMN` at stage 5); also the json compare and `test/json/REFUSE_DROP_REQUIRED.lang` |
+| M9 | `runtimeCol`: `boolOr (phase = 1) (phase = 2)` changed to `phase = 2` | KILLED by the eval `v3At3` in `test/eval/compat.lang` (want `runtime`, got `compatible 3 1`) |
+
+- M9 reading: "the runtime verdict accepted as compatible only
+  before the barrier" is read as follows. In phase 1 (after the
+  backfill, before the first barrier after it) a read gets `compatible`, not
+  `runtime`. Phase 2 (at the barrier) keeps `runtime`. Only the compat evals see
+  the difference: the C driver continues for the two verdicts.
+- M5 and M8 have the same killer. With no drop-required refusal, or with
+  the stage verdicts first, the `dropColumn` stage gives
+  `REFUSE_MISSING_COLUMN`.
+- The evals also kill domain mutants: `acceptsV1Live` kills M1 (it gives
+  1 when J2.1 is `true`), and `lockSafeSetNotNullNoCheck` kills M6.
+- M7 is on the domain `isBarrier`, not on the C `form_is_barrier`. The C
+  function only selects the `deploy` and `retire` steps for the live
+  set. A step that is not `deploy` or `retire` names a table, not an
+  app. Thus a C mutant of the same kind does not change the live set.
+  This is a reading of the code: that C mutant was not run.
+
+### Staged review fixes
+
+- J2.3 tracks recreated columns through `needsFill`, so initial presence
+  cannot bypass the unfilled-read check or the backfill runtime verdict.
+  `test/check/j4-readd-unfilled.lang` and `test/eval/backfill-reuse.lang`
+  cover the refused read and the runtime verdict after a new backfill.
+- `phase` restarts at each backfill. A later backfill cannot reuse the
+  runtime discharge of an earlier barrier. `test/eval/backfill-reuse.lang`
+  covers a second backfill after a barrier.
+- `fm_stage` uses the protocol name as its local live-set index. An app
+  cannot have that name, so generated lambdas preserve apps named `j`.
+  Two C regressions in `test/cubical.c` cover single and multiple live apps.
+
+### Open items from S4
+These items are open for the USER. S4 does not change them.
+- S5: `Fact` gets `retired`, `fleetAt` and `Guard` (Q-S4-4 (a)). The J3
+  guard on `fleetAt` is S5 or S6.
+- The survey count plan gives about 100 evals. S4 has 185 evals (with
+  the 33 checker proofs).
+- The survey U3 line (`REFUSE_DROP_REQUIRED` for the drop-early variant)
+  and the "stage 6" of Q-S4-5 are old: Q-S4-13 (a) replaces them
+  (`REFUSE_STALE_READ` at stage 5).
+- Q-S4-12: `app v0 ()` in a program with no column gets `TYPE_REFL`. No
+  test covers it.
+- At stage 0, the `REFUSE_MISSING_COLUMN` hint says "move the deploy of
+  V after stage 0" also for an app with no `deploy` step (as built).
+- The C driver and the domain overlap. `REFUSE_DROP_REQUIRED` is in C,
+  and L4 is the domain `dropHits` and `dropSafe`. `accepts` runs
+  `compat` again. The `lives` and `cols` of `examples/rename.lang` are
+  hand copies of the values that `form_live` and `fm_cols` make.
+- A domain term cannot iterate over `Fin k → X` for a variable `k`
+  (`TYPE_REFL` on `natLe`). This gave Q-S4-9 to Q-S4-11 (the ℕ-indexed
+  `Cols` and `Live`).
+- The progress line keeps `"laws":"0 of 0"`. `docs/DIAGNOSTICS.md` says
+  that `affine` and `laws` stay `"0 of 0"` until S3 and S4.
+- Q-S4-1 to Q-S4-16 and F-U0-2 are RULED (Q-S4-15 (a), Q-S4-16 (a):
+  USER 2026-10-28). Q-S2b-1 to Q-S2b-8 stay open (PLAN section 11).

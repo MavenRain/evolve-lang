@@ -1,0 +1,9 @@
+-- A column recreated under its original name needs a new backfill.
+table users (id : bigint key, name : text)
+
+app reader (reads users.name)
+
+protocol p where
+  dropColumn users name
+  addColumn users name text
+  deploy reader

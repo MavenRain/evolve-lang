@@ -1,0 +1,39 @@
+-- The chain laws L5 (PLAN 6.1, Q-S4-7 (a)): `nil` is a right unit and a left
+-- unit of `compose`, and `compose` is associative. Each law is a Path over
+-- `Chain`. `compose` is a fold on its second chain, so the right unit holds by
+-- `refl`. The left unit and associativity are folds on the last chain, as the
+-- Walk left unit of test/cubical.c. `langc eval` types the full program, so
+-- the Bool entries below make the gate type the three laws. Each Bool entry
+-- applies a law to the protocol `p` and compares the lengths of the two ends.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.id, reads users.name, writes users.name, inserts users.id, inserts users.name)
+
+protocol p where
+  deploy v1
+  retire v1
+
+rightUnit : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (a : Chain n m s s1) → Path (Chain n m s s1) (compose n m s s1 s1 a (nil n m s1)) a
+rightUnit n m s s1 a = refl
+
+leftUnit : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (a : Chain n m s s1) → Path (Chain n m s s1) (compose n m s s s1 (nil n m s) a) a
+leftUnit n m s s1 a = fold (λ (x : State n m) (y : State n m) (w : Chain n m x y) → Path (Chain n m x y) (compose n m x x y (nil n m x) w) w) (λ (x : State n m) → refl) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : Path (Chain n m x y) (compose n m x x y (nil n m x) w) w) i → snoc n m x y z (ih i) h) a
+
+assoc : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (s2 : State n m) → (s3 : State n m) → (a : Chain n m s s1) → (b : Chain n m s1 s2) → (c : Chain n m s2 s3) → Path (Chain n m s s3) (compose n m s s1 s3 a (compose n m s1 s2 s3 b c)) (compose n m s s2 s3 (compose n m s s1 s2 a b) c)
+assoc n m s s1 s2 s3 a b c = fold (λ (x : State n m) (y : State n m) (w : Chain n m x y) → (u : Chain n m s1 x) → Path (Chain n m s y) (compose n m s s1 y a (compose n m s1 x y u w)) (compose n m s x y (compose n m s s1 x a u) w)) (λ (x : State n m) (u : Chain n m s1 x) → refl) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : (u : Chain n m s1 x) → Path (Chain n m s y) (compose n m s s1 y a (compose n m s1 x y u w)) (compose n m s x y (compose n m s s1 x a u) w)) (u : Chain n m s1 x) i → snoc n m s y z (ih u i) h) c b
+
+-- One deploy step and one retire step after `p`, for associativity.
+again : Chain 2 1 p_2 p_2
+again = snoc 2 1 p_2 p_2 p_2 (nil 2 1 p_2) (deploy 2 1 p_2 v1)
+
+last : Chain 2 1 p_2 p_2
+last = snoc 2 1 p_2 p_2 p_2 (nil 2 1 p_2) (retire 2 1 p_2 v1)
+
+rightUnitP : Bool
+rightUnitP = natEq (length 2 1 p_0 p_2 (rightUnit 2 1 p_0 p_2 p i0)) (length 2 1 p_0 p_2 (rightUnit 2 1 p_0 p_2 p i1))
+
+leftUnitP : Bool
+leftUnitP = natEq (length 2 1 p_0 p_2 (leftUnit 2 1 p_0 p_2 p i0)) (length 2 1 p_0 p_2 (leftUnit 2 1 p_0 p_2 p i1))
+
+assocP : Bool
+assocP = natEq (length 2 1 p_0 p_2 (assoc 2 1 p_0 p_2 p_2 p_2 p again last i0)) (length 2 1 p_0 p_2 (assoc 2 1 p_0 p_2 p_2 p_2 p again last i1))

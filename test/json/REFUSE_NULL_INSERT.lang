@@ -1,0 +1,6 @@
+table users (name : text, id : bigint key)
+
+app v1 (reads users.id, inserts users.id)
+
+protocol p where
+  addNotNullCheck users name

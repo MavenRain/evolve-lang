@@ -1,0 +1,51 @@
+-- The rename demo of PLAN 4.6 (D5): users.name becomes users.display_name.
+-- v1 reads and writes name. v3 reads and writes display_name. An app that
+-- inserts into users also inserts the key users.id (J2.4).
+-- D5 stage 0: the start, users (id, name). v1 is live. Checker stage 0.
+-- D5 stage 1: addColumn. Checker stage 1.
+-- D5 stage 2: installSync. Checker stage 2.
+-- D5 stage 3: backfill. Checker stage 3.
+-- D5 stage 4: deploy v3 (barrier). v1 and v3 are live. Checker stage 4.
+-- D5 stage 5: retire v1 (barrier), dropSync, dropColumn. v3 is live.
+-- Checker stages 5, 6 and 7.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.name, reads users.id, writes users.name, inserts users.id, inserts users.name)
+
+app v3 (reads users.display_name, reads users.id, writes users.display_name, inserts users.id, inserts users.display_name)
+
+protocol rename where
+  addColumn users display_name text
+  installSync users display_name name
+  backfill users display_name ← name batch 1000
+  deploy v3
+  retire v1
+  dropSync users display_name name
+  dropColumn users name
+
+-- The laws L1, L4 and L6 on `rename` (Q-S4-7 (a)), proved by `refl`. The
+-- live sets are the live sets of the C driver: v1 at stages 0 to 3, v1 and
+-- v3 at stage 4, v3 at stages 5 to 7. `cols` is all the program columns.
+lives : ℕ → Live 3
+lives i = flagIf (natLe i 3) (pack 1 (λ (j : ℕ) → v1)) (flagIf (natEq i 4) (pack 2 (λ (j : ℕ) → flagIf (natEq j 0) v1 v3)) (pack 1 (λ (j : ℕ) → v3)))
+
+cols : Cols 3
+cols = pack 3 (λ (j : ℕ) → flagIf (natEq j 0) users_id (flagIf (natEq j 1) users_name users_display_name))
+
+stageSound : Bool
+stageSound = accepts 3 1 rename_0 rename_7 rename lives cols
+
+stageSoundProof : Path Bool stageSound true
+stageSoundProof = refl
+
+dropSound : Bool
+dropSound = dropSafe 3 1 rename_0 rename_7 rename lives
+
+dropSoundProof : Path Bool dropSound true
+dropSoundProof = refl
+
+lockSound : Bool
+lockSound = lockSafe 3 1 rename_0 rename_7 rename
+
+lockSoundProof : Path Bool lockSound true
+lockSoundProof = refl

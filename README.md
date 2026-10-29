@@ -9,7 +9,7 @@ application version without a column that the version needs. The host is
 TinyCC. The planned targets are PostgreSQL SQL stage files, a JSON
 compatibility report and a Wasm compatibility oracle module.
 
-## Status (S2c)
+## Status (S4)
 
 S1 gives the evolve-lang surface on the tcc-wasm kit of lang-template: the
 Agda-like syntax with ASCII aliases (`SPEC.md` section 2), `langc fmt`,
@@ -19,10 +19,16 @@ of the cubical kernel: the interval `I`, `PathP` and `Path`, `transp`,
 dimension 1 in cell signatures and the refusal codes `REFUSE_CELL` and
 `DOMAIN_FAMILY` (a hand port from quorum-lang 8dee55b). S2c adds codata
 (`codata`), the CC branch of `REFUSE_CELL`, the corecursor and the `head`
-and `tail` destructors (a hand port from intent-lang 67445ae). The tables,
-apps, protocols and the compatibility checker are not built yet. There is
-no SQL writer yet. `make check` passes. `docs/PLAN.md` section 9 gives the
-slices, and `docs/STATUS.md` gives the state.
+and `tail` destructors (a hand port from intent-lang 67445ae). S2d adds
+`Fin n` as a defined Sigma type, the kit types `Sum` and `Unit` and the
+ASCII value printer. S2e adds univalence: `Glue`, `glue`, `unglue` and
+`ua` (a hand port from zkpolicy-lang 1d263fb). S3 adds the evolve domain
+(`domain/domain.lang`: the states, the apps and the 11 steps), the forms
+`table`, `app` and `protocol`, and the step check J1. S4 adds the
+compatibility checker: J2 (`compat`), J4 and J5, the codes of
+`docs/PLAN.md` 4.4, the demo `examples/rename.lang` and the laws L1, L4,
+L5 and L6. There is no SQL writer yet. `make check` passes.
+`docs/PLAN.md` section 9 gives the slices, and `docs/STATUS.md` gives the state.
 
 evolve-lang does not promise zero downtime. The checker proves
 compatibility facts about the declared model only. Lock wait time, traffic,

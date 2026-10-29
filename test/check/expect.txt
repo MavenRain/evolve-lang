@@ -69,3 +69,11 @@ step-validate.lang REFUSE_STEP_INDEX isNotValid (check n m s c) is false
 step-set-not-null.lang REFUSE_STEP_INDEX isNullable (null n m s c) is false
 step-drop-check.lang REFUSE_STEP_INDEX boolNot (isAbsent (check n m s c)) is false
 rename-inplace.lang REFUSE_RENAME_INPLACE renames a column in place
+j4-drop-required.lang REFUSE_DROP_REQUIRED retire v1 before stage 5
+j4-missing-column.lang REFUSE_MISSING_COLUMN stage 0: the live version v3
+j4-stale-read.lang REFUSE_STALE_READ stage 5 (dropSync users display_name name)
+j4-unfilled-read.lang REFUSE_UNFILLED_READ stage 3 (deploy v3)
+j4-null-insert.lang REFUSE_NULL_INSERT retire v1 before stage 2
+j4-lock-scan.lang REFUSE_LOCK_SCAN stage 2 (setNotNull users name)
+rename-drop-early.lang REFUSE_STALE_READ stage 5 (dropSync users display_name name)
+j4-readd-unfilled.lang REFUSE_UNFILLED_READ stage 3 (deploy reader)

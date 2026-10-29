@@ -15,14 +15,16 @@ data CState : Type where
   notValid : CState
   valid : CState
 
--- The schema state: owner, key, present, ty, null, check, sync, filled.
--- `sync` takes the column codes (`witness c`), so that a fold over ℕ can
--- test each column (Q-S3-20 (a)).
+-- The schema state: owner, key, present, ty, null, check, sync, filled,
+-- link. `sync` takes the column codes (`witness c`), so that a fold over ℕ
+-- can test each column (Q-S3-20 (a)). `link` (S4, Q-S4-3 (a)) also takes
+-- the column codes: two columns are the same field when an installSync or
+-- a backfill step names both. No step clears a link.
 State : (n : ℕ) → (m : ℕ) → Type 0
-State n m = (Fin n → Fin m) × (Fin m → Fin n) × (Fin n → Bool) × (Fin n → ColType) × (Fin n → Null) × (Fin n → CState) × (ℕ → ℕ → Bool) × (Fin n → Bool)
+State n m = (Fin n → Fin m) × (Fin m → Fin n) × (Fin n → Bool) × (Fin n → ColType) × (Fin n → Null) × (Fin n → CState) × (ℕ → ℕ → Bool) × (Fin n → Bool) × (ℕ → ℕ → Bool)
 
-mkState : (n : ℕ) → (m : ℕ) → (sOwner : Fin n → Fin m) → (sKey : Fin m → Fin n) → (sPresent : Fin n → Bool) → (sTy : Fin n → ColType) → (sNull : Fin n → Null) → (sCheck : Fin n → CState) → (sSync : ℕ → ℕ → Bool) → (sFilled : Fin n → Bool) → State n m
-mkState n m sOwner sKey sPresent sTy sNull sCheck sSync sFilled = pack sOwner (pack sKey (pack sPresent (pack sTy (pack sNull (pack sCheck (pack sSync sFilled))))))
+mkState : (n : ℕ) → (m : ℕ) → (sOwner : Fin n → Fin m) → (sKey : Fin m → Fin n) → (sPresent : Fin n → Bool) → (sTy : Fin n → ColType) → (sNull : Fin n → Null) → (sCheck : Fin n → CState) → (sSync : ℕ → ℕ → Bool) → (sFilled : Fin n → Bool) → (sLink : ℕ → ℕ → Bool) → State n m
+mkState n m sOwner sKey sPresent sTy sNull sCheck sSync sFilled sLink = pack sOwner (pack sKey (pack sPresent (pack sTy (pack sNull (pack sCheck (pack sSync (pack sFilled sLink)))))))
 
 owner : (n : ℕ) → (m : ℕ) → (s : State n m) → Fin n → Fin m
 owner n m s = witness s
@@ -46,11 +48,15 @@ sync : (n : ℕ) → (m : ℕ) → (s : State n m) → ℕ → ℕ → Bool
 sync n m s = witness (payload (payload (payload (payload (payload (payload s))))))
 
 filled : (n : ℕ) → (m : ℕ) → (s : State n m) → Fin n → Bool
-filled n m s = payload (payload (payload (payload (payload (payload (payload s))))))
+filled n m s = witness (payload (payload (payload (payload (payload (payload (payload s)))))))
 
--- The columns of an app: k columns, each a `Fin n`.
+link : (n : ℕ) → (m : ℕ) → (s : State n m) → ℕ → ℕ → Bool
+link n m s = payload (payload (payload (payload (payload (payload (payload (payload s)))))))
+
+-- The columns of an app: k columns, each a `Fin n`, at the codes 0 .. k - 1
+-- (Q-S4-9 (a)). Guest code iterates them with `allFrom`.
 Cols : (n : ℕ) → Type 0
-Cols n = (k : ℕ) × (Fin k → Fin n)
+Cols n = (k : ℕ) × (ℕ → Fin n)
 
 -- An app: reads, writes, inserts.
 App : (n : ℕ) → Type 0
@@ -74,6 +80,9 @@ isAbsent x = fold true false false x
 isNotValid : (x : CState) → Bool
 isNotValid x = fold false true false x
 
+isValid : (x : CState) → Bool
+isValid x = fold false false true x
+
 isNullable : (x : Null) → Bool
 isNullable x = fold true false x
 
@@ -96,22 +105,25 @@ setSync : (f : ℕ → ℕ → Bool) → (c : ℕ) → (d : ℕ) → (v : Bool) 
 setSync f c d v x y = flagIf (boolAnd (natEq x c) (natEq y d)) v (f x y)
 
 putPresent : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (v : Bool) → State n m
-putPresent n m s c v = mkState n m (owner n m s) (key n m s) (setAt n Bool (present n m s) c v) (ty n m s) (null n m s) (check n m s) (sync n m s) (filled n m s)
+putPresent n m s c v = mkState n m (owner n m s) (key n m s) (setAt n Bool (present n m s) c v) (ty n m s) (null n m s) (check n m s) (sync n m s) (filled n m s) (link n m s)
 
 putTy : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (v : ColType) → State n m
-putTy n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (setAt n ColType (ty n m s) c v) (null n m s) (check n m s) (sync n m s) (filled n m s)
+putTy n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (setAt n ColType (ty n m s) c v) (null n m s) (check n m s) (sync n m s) (filled n m s) (link n m s)
 
 putNull : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (v : Null) → State n m
-putNull n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (setAt n Null (null n m s) c v) (check n m s) (sync n m s) (filled n m s)
+putNull n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (setAt n Null (null n m s) c v) (check n m s) (sync n m s) (filled n m s) (link n m s)
 
 putCheck : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (v : CState) → State n m
-putCheck n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (null n m s) (setAt n CState (check n m s) c v) (sync n m s) (filled n m s)
+putCheck n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (null n m s) (setAt n CState (check n m s) c v) (sync n m s) (filled n m s) (link n m s)
 
 putSync : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (d : Fin n) → (v : Bool) → State n m
-putSync n m s c d v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (null n m s) (check n m s) (setSync (sync n m s) (witness c) (witness d) v) (filled n m s)
+putSync n m s c d v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (null n m s) (check n m s) (setSync (sync n m s) (witness c) (witness d) v) (filled n m s) (link n m s)
 
 putFilled : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (v : Bool) → State n m
-putFilled n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (null n m s) (check n m s) (sync n m s) (setAt n Bool (filled n m s) c v)
+putFilled n m s c v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (null n m s) (check n m s) (sync n m s) (setAt n Bool (filled n m s) c v) (link n m s)
+
+putLink : (n : ℕ) → (m : ℕ) → (s : State n m) → (c : Fin n) → (d : Fin n) → (v : Bool) → State n m
+putLink n m s c d v = mkState n m (owner n m s) (key n m s) (present n m s) (ty n m s) (null n m s) (check n m s) (sync n m s) (filled n m s) (setSync (link n m s) (witness c) (witness d) v)
 
 -- The J1 pre and target functions (Q-S3-2 (a), Q-S3-21 (a)). Each takes
 -- the fields of its step. deploy and retire have none.
@@ -125,7 +137,7 @@ preInstallSync : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) →
 preInstallSync n m s t c d = boolAnd (inTbl n m s t c) (boolAnd (inTbl n m s t d) (boolAnd (boolNot (sameCol n c d)) (boolNot (sync n m s (witness c) (witness d)))))
 
 postInstallSync : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → (d : Fin n) → State n m
-postInstallSync n m s t c d = putSync n m (putSync n m s c d true) d c true
+postInstallSync n m s t c d = putLink n m (putLink n m (putSync n m (putSync n m s c d true) d c true) c d true) d c true
 
 preDropSync : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → (d : Fin n) → Bool
 preDropSync n m s t c d = sync n m s (witness c) (witness d)
@@ -137,7 +149,7 @@ preBackfill : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c
 preBackfill n m s t c d k = boolAnd (inTbl n m s t c) (boolAnd (inTbl n m s t d) (boolAnd (boolNot (sameCol n c d)) (natLe 1 k)))
 
 postBackfill : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → (d : Fin n) → (k : ℕ) → State n m
-postBackfill n m s t c d k = putFilled n m s c true
+postBackfill n m s t c d k = putLink n m (putLink n m (putFilled n m s c true) c d true) d c true
 
 preDropColumn : (n : ℕ) → (m : ℕ) → (s : State n m) → (t : Fin m) → (c : Fin n) → Bool
 preDropColumn n m s t c = boolAnd (inTbl n m s t c) (boolAnd (boolNot (sameCol n c (key n m s t))) (noSync n m s c))
@@ -201,6 +213,198 @@ length n m s s1 a = fold (λ (x : State n m) → 0) (λ (x : State n m) (y : Sta
 -- The stages of a protocol with k steps.
 Stage : (k : ℕ) → Type 0
 Stage k = Fin (natAdd k 1)
+
+-- The refusal codes of PLAN 4.4, in the 4.4 order (S4).
+data Code : Type where
+  dropRequired : Code
+  missingColumn : Code
+  staleRead : Code
+  unfilledRead : Code
+  nullInsert : Code
+  stepIndex : Code
+  lockScan : Code
+  renameInplace : Code
+
+-- A fact that only the run can show (Q-S4-4 (a)). S4 has `backfillDone t
+-- c` only; S5 adds the others.
+data Fact (n : ℕ) (m : ℕ) : Type where
+  backfillDone : (doneTbl : Fin m) → (doneCol : Fin n) → Fact n m
+
+-- The verdict of compat for one live version at one stage.
+data Verdict (n : ℕ) (m : ℕ) : Type where
+  compatible : Verdict n m
+  refused : (refusedCode : Code) → Verdict n m
+  runtime : (runtimeFact : Fact n m) → Verdict n m
+
+-- The lock that a step takes on its table (PLAN 5.1).
+data LockMode : Type where
+  accessExclusive : LockMode
+  shareRowExclusive : LockMode
+  shareUpdateExclusive : LockMode
+  rowExclusive : LockMode
+  noLock : LockMode
+
+-- The scan class of a step (PLAN 5.1).
+data ScanClass : Type where
+  metadata : ScanClass
+  scan : ScanClass
+  batched : ScanClass
+  noScan : ScanClass
+
+-- The lock of each step form (PLAN 5.1, Q-S4-6 (a)): a fold over the
+-- step, one case for each constructor, in the `Step` order. dropSync
+-- (DROP TRIGGER) is accessExclusive (F-U0-2 (a)).
+lockOf : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (h : Step n m s s1) → LockMode
+lockOf n m s s1 h = fold (λ (x : State n m) (t : Fin m) (c : Fin n) (v : ColType) (ok : Path Bool (preAddColumn n m x t c v) true) → accessExclusive) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preInstallSync n m x t c d) true) → shareRowExclusive) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preDropSync n m x t c d) true) → accessExclusive) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (k : ℕ) (ok : Path Bool (preBackfill n m x t c d k) true) → rowExclusive) (λ (x : State n m) (a : App n) → noLock) (λ (x : State n m) (a : App n) → noLock) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropColumn n m x t c) true) → accessExclusive) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preAddNotNullCheck n m x t c) true) → accessExclusive) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preValidate n m x t c) true) → shareUpdateExclusive) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preSetNotNull n m x t c) true) → accessExclusive) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropCheck n m x t c) true) → accessExclusive) h
+
+-- The scan class of each step form (PLAN 5.1, Q-S4-6 (a)). setNotNull
+-- reads its source state: a scan when the CHECK of the column is not
+-- valid, else metadata.
+scanOf : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (h : Step n m s s1) → ScanClass
+scanOf n m s s1 h = fold (λ (x : State n m) (t : Fin m) (c : Fin n) (v : ColType) (ok : Path Bool (preAddColumn n m x t c v) true) → metadata) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preInstallSync n m x t c d) true) → metadata) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preDropSync n m x t c d) true) → metadata) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (k : ℕ) (ok : Path Bool (preBackfill n m x t c d k) true) → batched) (λ (x : State n m) (a : App n) → noScan) (λ (x : State n m) (a : App n) → noScan) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropColumn n m x t c) true) → metadata) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preAddNotNullCheck n m x t c) true) → metadata) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preValidate n m x t c) true) → scan) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preSetNotNull n m x t c) true) → flagIf (isValid (check n m x c)) metadata scan) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropCheck n m x t c) true) → metadata) h
+
+-- The live versions at a stage: k apps at the codes 0 .. k - 1 (Q-S4-9
+-- (a)).
+Live : (n : ℕ) → Type 0
+Live n = (k : ℕ) × (ℕ → App n)
+
+-- `boolOr x y` is x or y.
+boolOr : (x : Bool) → (y : Bool) → Bool
+boolOr x y = flagIf x true y
+
+-- The reads, the writes and the inserts of an app.
+readsOf : (n : ℕ) → (v : App n) → Cols n
+readsOf n v = witness v
+
+writesOf : (n : ℕ) → (v : App n) → Cols n
+writesOf n v = witness (payload v)
+
+insertsOf : (n : ℕ) → (v : App n) → Cols n
+insertsOf n v = payload (payload v)
+
+-- `allCols n c p` is true when p holds for each column of c.
+allCols : (n : ℕ) → (c : Cols n) → (p : Fin n → Bool) → Bool
+allCols n c p = allFrom (witness c) (λ (j : ℕ) → p (payload c j)) 0
+
+-- `anyCol n c p` is true when p holds for a column of c.
+anyCol : (n : ℕ) → (c : Cols n) → (p : Fin n → Bool) → Bool
+anyCol n c p = boolNot (allCols n c (λ (d : Fin n) → boolNot (p d)))
+
+-- `hasCol n c d` is true when d is a column of c.
+hasCol : (n : ℕ) → (c : Cols n) → (d : Fin n) → Bool
+hasCol n c d = anyCol n c (λ (e : Fin n) → sameCol n e d)
+
+-- `allLive n l p` is true when p holds for each app of l.
+allLive : (n : ℕ) → (l : Live n) → (p : App n → Bool) → Bool
+allLive n l p = allFrom (witness l) (λ (j : ℕ) → p (payload l j)) 0
+
+-- A barrier step (PLAN 3.2, 4.3): deploy and retire. A fold over the step,
+-- one case for each constructor, in the `Step` order.
+isBarrier : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (h : Step n m s s1) → Bool
+isBarrier n m s s1 h = fold (λ (x : State n m) (t : Fin m) (c : Fin n) (v : ColType) (ok : Path Bool (preAddColumn n m x t c v) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preInstallSync n m x t c d) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preDropSync n m x t c d) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (k : ℕ) (ok : Path Bool (preBackfill n m x t c d k) true) → false) (λ (x : State n m) (a : App n) → true) (λ (x : State n m) (a : App n) → true) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropColumn n m x t c) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preAddNotNullCheck n m x t c) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preValidate n m x t c) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preSetNotNull n m x t c) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropCheck n m x t c) true) → false) h
+
+-- `fillsCol n m s s1 h j` is true when h is a backfill of the column with
+-- the code j.
+fillsCol : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (h : Step n m s s1) → (j : ℕ) → Bool
+fillsCol n m s s1 h j = fold (λ (x : State n m) (t : Fin m) (c : Fin n) (v : ColType) (ok : Path Bool (preAddColumn n m x t c v) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preInstallSync n m x t c d) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preDropSync n m x t c d) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (k : ℕ) (ok : Path Bool (preBackfill n m x t c d k) true) → natEq (witness c) j) (λ (x : State n m) (a : App n) → false) (λ (x : State n m) (a : App n) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropColumn n m x t c) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preAddNotNullCheck n m x t c) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preValidate n m x t c) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preSetNotNull n m x t c) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropCheck n m x t c) true) → false) h
+
+-- J3 (D6): `segments a i` is the segment of stage i, the number of
+-- barrier steps in steps 1 .. i. A barrier stage starts its segment.
+segments : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (a : Chain n m s s1) → ℕ → ℕ
+segments n m s s1 a = fold (λ (x : State n m) (i : ℕ) → 0) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : ℕ → ℕ) (i : ℕ) → natAdd (ih i) (flagIf (boolAnd (isBarrier n m y z h) (natLe (natAdd (length n m x y w) 1) i)) 1 0)) a
+
+-- The phase of the latest backfill of the column with code j at the end of a
+-- (Q-S4-4 (a), Q-S4-10 (a)): 0 no backfill of it, 1 backfilled, 2 at the
+-- first barrier after the backfill, 3 after that barrier.
+phase : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (a : Chain n m s s1) → (j : ℕ) → ℕ
+phase n m s s1 a j = fold (λ (x : State n m) → 0) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : ℕ) → flagIf (fillsCol n m y z h j) 1 (flagIf (natEq ih 0) 0 (flagIf (natEq ih 1) (flagIf (isBarrier n m y z h) 2 1) 3))) a
+
+-- A column needs a backfill if it starts absent or a step adds it. This
+-- includes a column dropped and recreated under its original name.
+needsFill : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (c : Fin n) → Bool
+needsFill n m s0 s a c = fold (λ (x : State n m) → boolNot (present n m x c)) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : Bool) → boolOr ih (boolAnd (boolNot (present n m y c)) (present n m z c))) a
+
+-- J2.2 (Q-S4-3 (a)): the read c is fresh at s when each column d that a
+-- live app w writes is not linked to c, or is c, or w also writes c, or a
+-- sync joins d and c.
+fresh : (n : ℕ) → (m : ℕ) → (s : State n m) → (live : Live n) → (c : Fin n) → Bool
+fresh n m s live c = allLive n live (λ (w : App n) → allCols n (writesOf n w) (λ (d : Fin n) → boolOr (boolNot (link n m s (witness d) (witness c))) (boolOr (sameCol n d c) (boolOr (hasCol n (writesOf n w) c) (sync n m s (witness d) (witness c))))))
+
+-- J2.4: column c needs a value on an insert by v at s when it is present,
+-- v inserts into its table, and it is notNull or has a CHECK.
+needsValue : (n : ℕ) → (m : ℕ) → (s : State n m) → (v : App n) → (c : Fin n) → Bool
+needsValue n m s v c = boolAnd (present n m s c) (boolAnd (anyCol n (insertsOf n v) (λ (d : Fin n) → sameTbl m (owner n m s d) (owner n m s c))) (boolOr (boolNot (isNullable (null n m s c))) (boolNot (isAbsent (check n m s c)))))
+
+-- J2.4: an insert by v gives c a value: v inserts c, or a sync joins an
+-- insert of v and c.
+getsValue : (n : ℕ) → (m : ℕ) → (s : State n m) → (v : App n) → (c : Fin n) → Bool
+getsValue n m s v c = boolOr (hasCol n (insertsOf n v) c) (anyCol n (insertsOf n v) (λ (d : Fin n) → sync n m s (witness d) (witness c)))
+
+-- A read c that the protocol adds (including a recreated column) and has the
+-- backfill phase 1 or 2 at the end of a gives `runtime (backfillDone t c)`;
+-- else next (Q-S4-4 (a)).
+runtimeCol : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (c : Fin n) → (next : Verdict n m) → Verdict n m
+runtimeCol n m s0 s a c next = flagIf (boolAnd (needsFill n m s0 s a c) (boolOr (natEq (phase n m s0 s a (witness c)) 1) (natEq (phase n m s0 s a (witness c)) 2))) (runtime n m (backfillDone n m (owner n m s c) c)) next
+
+-- The first read of v that runtimeCol marks gives its runtime verdict;
+-- else compatible.
+runtimeOf : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (v : App n) → Verdict n m
+runtimeOf n m s0 s a v = fold (λ (r : ℕ → Verdict n m) (i : ℕ) → runtimeCol n m s0 s a (payload (readsOf n v) i) (r (natAdd i 1))) (λ (i : ℕ) → compatible n m) (witness (readsOf n v)) 0
+
+-- J2 (PLAN 3.3, Q-S4-10 (a), Q-S4-11 (a)): the verdict for the live version
+-- v at the end of a. live is the live set there, cols the program columns.
+-- The first clause that fails gives its code (Q-S4-1 (a)): J2.1 each read,
+-- write and insert is present; J2.2 each read is fresh; J2.3 each read
+-- that the protocol adds is filled; J2.4 each column that needs a value on
+-- an insert gets one.
+compat : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (live : Live n) → (cols : Cols n) → (v : App n) → Verdict n m
+compat n m s0 s a live cols v = flagIf (boolAnd (allCols n (readsOf n v) (present n m s)) (boolAnd (allCols n (writesOf n v) (present n m s)) (allCols n (insertsOf n v) (present n m s)))) (flagIf (allCols n (readsOf n v) (fresh n m s live)) (flagIf (allCols n (readsOf n v) (λ (c : Fin n) → boolOr (boolNot (needsFill n m s0 s a c)) (filled n m s c))) (flagIf (allCols n cols (λ (c : Fin n) → boolOr (boolNot (needsValue n m s v c)) (getsValue n m s v c))) (runtimeOf n m s0 s a v) (refused n m nullInsert)) (refused n m unfilledRead)) (refused n m staleRead)) (refused n m missingColumn)
+
+-- The laws L1, L4 and L6 as Bool decisions (PLAN 6.1, Q-S4-7 (a)). A
+-- program proves a decision on its protocol by `refl`. `lives i` is the live
+-- set at stage i, as the C driver makes it from the deploy and retire steps.
+isRefused : (n : ℕ) → (m : ℕ) → (v : Verdict n m) → Bool
+isRefused n m v = fold false (λ (c : Code) → true) (λ (f : Fact n m) → false) v
+
+isAccessExclusive : (l : LockMode) → Bool
+isAccessExclusive l = fold true false false false false l
+
+isScan : (c : ScanClass) → Bool
+isScan c = fold false true false false c
+
+-- `usesCol n v c` is true when the app v reads, writes or inserts c.
+usesCol : (n : ℕ) → (v : App n) → (c : Fin n) → Bool
+usesCol n v c = boolOr (hasCol n (readsOf n v) c) (boolOr (hasCol n (writesOf n v) c) (hasCol n (insertsOf n v) c))
+
+-- L1 at one stage: `compat` refuses no live app.
+stageOk : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (live : Live n) → (cols : Cols n) → Bool
+stageOk n m s0 s a live cols = allLive n live (λ (v : App n) → boolNot (isRefused n m (compat n m s0 s a live cols v)))
+
+-- L1 (Q-S4-1 (a)): `stageOk` at each stage of the chain. These are the
+-- `compat` terms that the C driver evaluates (J4).
+accepts : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (lives : ℕ → Live n) → (cols : Cols n) → Bool
+accepts n m s0 s a lives cols = fold (λ (x : State n m) → stageOk n m x x (nil n m x) (lives 0) cols) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : Bool) → boolAnd ih (stageOk n m x z (snoc n m x y z w h) (lives (natAdd (length n m x y w) 1)) cols)) a
+
+-- `dropHits n m s s1 h v` is true when h is a dropColumn of a column that
+-- the app v uses.
+dropHits : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (h : Step n m s s1) → (v : App n) → Bool
+dropHits n m s s1 h v = fold (λ (x : State n m) (t : Fin m) (c : Fin n) (k : ColType) (ok : Path Bool (preAddColumn n m x t c k) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preInstallSync n m x t c d) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preDropSync n m x t c d) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (k : ℕ) (ok : Path Bool (preBackfill n m x t c d k) true) → false) (λ (x : State n m) (a : App n) → false) (λ (x : State n m) (a : App n) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropColumn n m x t c) true) → usesCol n v c) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preAddNotNullCheck n m x t c) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preValidate n m x t c) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preSetNotNull n m x t c) true) → false) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropCheck n m x t c) true) → false) h
+
+-- `noDrops n m s s1 a v` is true when no step of a drops a column that the
+-- app v uses.
+noDrops : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (a : Chain n m s s1) → (v : App n) → Bool
+noDrops n m s s1 a v = fold (λ (x : State n m) → true) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : Bool) → boolAnd ih (boolNot (dropHits n m y z h v))) a
+
+-- L4: no app that is live at a stage uses a column that a step at or before
+-- the stage drops.
+dropSafe : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (lives : ℕ → Live n) → Bool
+dropSafe n m s0 s a lives = fold (λ (x : State n m) → true) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : Bool) → boolAnd ih (allLive n (lives (natAdd (length n m x y w) 1)) (λ (v : App n) → noDrops n m x z (snoc n m x y z w h) v))) a
+
+-- L6: no step of the chain has the scan class `scan` under ACCESS
+-- EXCLUSIVE. These are the `lockOf` and `scanOf` terms that the C driver
+-- evaluates (J5).
+lockSafe : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → Bool
+lockSafe n m s0 s a = fold (λ (x : State n m) → true) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : Bool) → boolAnd ih (boolNot (boolAnd (isAccessExclusive (lockOf n m y z h)) (isScan (scanOf n m y z h))))) a
 
 -- Kit sample (Q-S3-5 (a)). The kit tests use these names. A later slice
 -- removes them, when the ir and wasm tests have evolve replacements.

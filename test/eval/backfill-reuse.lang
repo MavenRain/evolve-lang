@@ -1,0 +1,40 @@
+-- A new backfill needs its own runtime guard, including on a recreated
+-- column that was present in the initial schema.
+table users (id : bigint key, name : text, spare : text)
+
+app marker ()
+
+protocol repeated where
+  addColumn users copy text
+  backfill users copy ← name batch 10
+  deploy marker
+  backfill users copy ← name batch 10
+
+protocol rebuilt where
+  dropColumn users name
+  addColumn users name text
+  backfill users name ← spare batch 10
+
+copyReader : App 4
+copyReader = pack (pack 1 (λ (j : ℕ) → users_copy)) (pack (pack 0 (λ (j : ℕ) → users_id)) (pack 0 (λ (j : ℕ) → users_id)))
+
+nameReader : App 4
+nameReader = pack (pack 1 (λ (j : ℕ) → users_name)) (pack (pack 0 (λ (j : ℕ) → users_id)) (pack 0 (λ (j : ℕ) → users_id)))
+
+cols : Cols 4
+cols = pack 4 (λ (j : ℕ) → flagIf (natEq j 0) users_id (flagIf (natEq j 1) users_name (flagIf (natEq j 2) users_spare users_copy)))
+
+beforeFill : Chain 4 1 rebuilt_0 rebuilt_2
+beforeFill = snoc 4 1 rebuilt_0 rebuilt_1 rebuilt_2 (snoc 4 1 rebuilt_0 rebuilt_0 rebuilt_1 (nil 4 1 rebuilt_0) (dropColumn 4 1 rebuilt_0 (pack 0 refl) users_name refl)) (addColumn 4 1 rebuilt_1 (pack 0 refl) users_name text refl)
+
+repeatedPhase : ℕ
+repeatedPhase = phase 4 1 repeated_0 repeated_4 repeated (witness users_copy)
+
+repeatedVerdict : Verdict 4 1
+repeatedVerdict = compat 4 1 repeated_0 repeated_4 repeated (pack 1 (λ (j : ℕ) → copyReader)) cols copyReader
+
+recreatedUnfilled : Verdict 4 1
+recreatedUnfilled = compat 4 1 rebuilt_0 rebuilt_2 beforeFill (pack 1 (λ (j : ℕ) → nameReader)) cols nameReader
+
+recreatedFilled : Verdict 4 1
+recreatedFilled = compat 4 1 rebuilt_0 rebuilt_3 rebuilt (pack 1 (λ (j : ℕ) → nameReader)) cols nameReader

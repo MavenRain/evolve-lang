@@ -1,0 +1,7 @@
+table users (name : text, id : bigint key)
+
+app v3 (reads users.display_name, reads users.id)
+
+protocol p where
+  deploy v3
+  addColumn users display_name text

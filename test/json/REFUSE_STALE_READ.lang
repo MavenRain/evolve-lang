@@ -1,0 +1,12 @@
+table users (name : text, id : bigint key)
+
+app v1 (reads users.name, reads users.id, writes users.name, inserts users.id, inserts users.name)
+
+app v3 (reads users.display_name, reads users.id, writes users.display_name, inserts users.id, inserts users.display_name)
+
+protocol p where
+  addColumn users display_name text
+  installSync users display_name name
+  backfill users display_name ← name batch 1000
+  deploy v3
+  dropSync users display_name name

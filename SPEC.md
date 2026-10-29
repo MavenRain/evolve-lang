@@ -236,17 +236,23 @@ is a core name.
 | `ColType` | The type of a column (PLAN 4.1) | `data` with `text`, `bigint` (`domain/domain.lang:5-7`) |
 | `Null` | The nullability of a column (PLAN 4.1) | `data` with `nullable`, `notNull` (`domain/domain.lang:9-11`) |
 | `CState` | The state of the not-null CHECK of a column (PLAN 4.1) | `data` with `absent`, `notValid`, `valid` (`domain/domain.lang:13-16`) |
-| `State n m` | The schema state (PLAN 4.1) | An iterated Sigma of the 8 fields of 5.1 (`domain/domain.lang:21-49`) |
-| `Cols n` | A vector of columns | `(k : ℕ) × (Fin k → Fin n)` (`domain/domain.lang:52-53`) |
-| `App n` | An application version: the columns that it reads, the columns that it writes on update, the columns that it supplies on insert (PLAN 4.1) | `Cols n × Cols n × Cols n` (`domain/domain.lang:56-57`) |
-| `Step n m s s'` | One step that changes the state `s` into `s'` (PLAN 4.1, J1 of 4.2) | `data` with two `State n m` indices and one constructor for each step word of section 6 (`domain/domain.lang:174-185`) |
-| `Chain n m s0 sk` | A protocol: a chain of steps from `s0` to `sk` (PLAN 4.1) | `data` with `nil : Chain n m s s` and `snoc : Chain n m s s' → Step n m s' s'' → Chain n m s s''` (`domain/domain.lang:188-190`) |
-| `Stage k` | A stage of a protocol with `k` steps (PLAN 4.1) | `Fin (k + 1)` (`domain/domain.lang:202-203`) |
+| `State n m` | The schema state (PLAN 4.1) | An iterated Sigma of the 9 fields of 5.1 (`domain/domain.lang:23-54`) |
+| `Cols n` | A vector of columns: `k` columns at the codes 0 .. k - 1 (Q-S4-9 (a)) | `(k : ℕ) × (ℕ → Fin n)` (`domain/domain.lang:58-59`) |
+| `App n` | An application version: the columns that it reads, the columns that it writes on update, the columns that it supplies on insert (PLAN 4.1) | `Cols n × Cols n × Cols n` (`domain/domain.lang:62-63`) |
+| `Step n m s s'` | One step that changes the state `s` into `s'` (PLAN 4.1, J1 of 4.2) | `data` with two `State n m` indices and one constructor for each step word of section 6 (`domain/domain.lang:186-197`) |
+| `Chain n m s0 sk` | A protocol: a chain of steps from `s0` to `sk` (PLAN 4.1) | `data` with `nil : Chain n m s s` and `snoc : Chain n m s s' → Step n m s' s'' → Chain n m s s''` (`domain/domain.lang:200-202`) |
+| `Stage k` | A stage of a protocol with `k` steps (PLAN 4.1) | `Fin (k + 1)` (`domain/domain.lang:214-215`) |
+| `Code` | A refusal code of PLAN 4.4 (S4) | `data` with `dropRequired`, `missingColumn`, `staleRead`, `unfilledRead`, `nullInsert`, `stepIndex`, `lockScan`, `renameInplace`, in the 4.4 order (`domain/domain.lang:218-226`) |
+| `Fact n m` | A fact that only the run can show (PLAN 4.5, Q-S4-4 (a)) | `data` with `backfillDone t c` only; S5 adds the other facts (`domain/domain.lang:230-231`) |
+| `Verdict n m` | The verdict of `compat` for one live version at one stage (PLAN 4.2) | `data` with `compatible`, `refused (code : Code)`, `runtime (fact : Fact n m)` (`domain/domain.lang:234-237`) |
+| `LockMode` | The lock that a step takes on its table (PLAN 5.1) | `data` with `accessExclusive`, `shareRowExclusive`, `shareUpdateExclusive`, `rowExclusive`, `noLock` (`domain/domain.lang:240-245`) |
+| `ScanClass` | The scan class of a step (PLAN 5.1) | `data` with `metadata`, `scan`, `batched`, `noScan` (`domain/domain.lang:248-252`) |
+| `Live n` | The live versions at a stage: `k` apps at the codes 0 .. k - 1 (Q-S4-9 (a)) | `(k : ℕ) × (ℕ → App n)` (`domain/domain.lang:268-269`) |
 
 ### 5.1 The State fields
 
 Each field has an accessor with the same name (`owner n m s` and so on,
-`domain/domain.lang:27-49`) and a `put` function (`domain/domain.lang:98-114`).
+`domain/domain.lang:29-54`) and a `put` function (`domain/domain.lang:107-126`).
 
 | Field | Type | Meaning | Steps that change it |
 |---|---|---|---|
@@ -258,6 +264,7 @@ Each field has an accessor with the same name (`owner n m s` and so on,
 | `check` | `Fin n → CState` | The not-null CHECK of the column | `addColumn`, `dropColumn`, `addNotNullCheck`, `validate`, `dropCheck` |
 | `sync` | `ℕ → ℕ → Bool` | A sync trigger from the first column to the second. It takes the column codes (`witness c`), so that a fold over `ℕ` can test each column (Q-S3-20 (a)) | `installSync`, `dropSync` |
 | `filled` | `Fin n → Bool` | A backfill filled the column | `addColumn`, `backfill`, `dropColumn` |
+| `link` | `ℕ → ℕ → Bool` | The two columns are the same field (S4, Q-S4-3 (a)). It takes the column codes, as `sync` does. J2.2 uses it. No step clears a link | `installSync`, `backfill` (both directions) |
 
 ### 5.2 The `table`, `app` and `protocol` forms
 
@@ -284,6 +291,8 @@ step   := WORD NAME NAME NAME          (addColumn t c ty, installSync t c c',
   column type is a name (`text` or `bigint`).
 - `app`: the items are `word t.c`. A word can repeat and can be absent. `()`
   is an app with no columns. Each `Cols` keeps the item order (Q-S3-26 (a)).
+  In a program with no column (`n = 0`), an `app` gets `TYPE_REFL`
+  (Q-S4-12 (a)); before S4 it checked.
 - `protocol`: one step on each line, under the layout rule (2.4). The step
   words are the 11 words of section 6 and `renameColumn`, which the checker
   refuses (`REFUSE_RENAME_INPLACE`).
@@ -313,7 +322,7 @@ The operations are the 11 step words of a `protocol`. Each step word is a
 constructor of `Step n m` (`domain/domain.lang:174-185`). A step with a
 `pre` function takes a witness `Path Bool (pre ...) true`, and its target is
 the `post` function of its source (J1 of PLAN 4.2, Q-S3-2 (a), Q-S3-21 (a)).
-The `pre` and `post` functions are at `domain/domain.lang:118-170`. "`c` in
+The `pre` and `post` functions are at `domain/domain.lang:130-182`. "`c` in
 `t`" means that `c` is present and `owner c = t` (`inTbl`).
 
 | Operation | Type | Meaning: pre (must be true) | Meaning: target (post) |
@@ -330,32 +339,78 @@ The `pre` and `post` functions are at `domain/domain.lang:118-170`. "`c` in
 | `setNotNull t c` | `Step n m s (postSetNotNull n m s t c)` | `c` in `t`; nullable | notNull |
 | `dropCheck t c` | `Step n m s (postDropCheck n m s t c)` | CHECK not absent | CHECK absent |
 
-`deploy` and `retire` change the live set, not the schema (PLAN 4.1). The
-live-set refusals are S4. `setNotNull` with no `valid` CHECK is J5
-(`REFUSE_LOCK_SCAN`, S4), not J1.
+`deploy` and `retire` change the live set, not the schema (PLAN 4.1). Each
+app of the program that the protocol does not `deploy` is live at stage 0;
+`deploy a` adds `a` and `retire a` removes it (Q-S4-2 (a)). `setNotNull` with
+no `valid` CHECK is J5 (`REFUSE_LOCK_SCAN`), not J1.
 
-The chain operations (`domain/domain.lang:192-199`):
+The chain operations (`domain/domain.lang:206-211`):
 
 | Operation | Type | Meaning (design section) |
 |---|---|---|
 | `compose n m s s1 s2 a b` | `Chain n m s s1 → Chain n m s1 s2 → Chain n m s s2` | `a`, then `b` (PLAN `_⨾_`, Q-S3-12 (a)) |
 | `length n m s s1 a` | `Chain n m s s1 → ℕ` | The number of steps of `a` |
 
+The checker operations (S4, `domain/domain.lang:257-407`). In each type,
+`a : Chain n m s0 s`, `h : Step n m s s1`, `v : App n`, `live : Live n`,
+`lives : ℕ → Live n` (the live set at each stage) and `cols : Cols n` (the
+columns of the program).
+
+| Operation | Type | Meaning (design section) |
+|---|---|---|
+| `lockOf n m s s1 h` | `LockMode` | The lock of the step (PLAN 5.1, Q-S4-6 (a)). `dropSync` is `accessExclusive` (F-U0-2 (a)) |
+| `scanOf n m s s1 h` | `ScanClass` | The scan class of the step (PLAN 5.1). `setNotNull` is `scan` when the CHECK of the column is not `valid` at `s` |
+| `isBarrier n m s s1 h` | `Bool` | The step is `deploy` or `retire` (PLAN 4.3) |
+| `segments n m s0 s a i` | `ℕ` | J3: the segment of stage `i`, the number of barrier steps in steps 1 .. i |
+| `phase n m s0 s a j` | `ℕ` | The backfill phase of the column with the code `j` at the end of `a`: 0 no backfill, 1 backfilled, 2 at the first barrier after the backfill, 3 after that barrier (Q-S4-4 (a), Q-S4-10 (a)) |
+| `fresh n m s live c` | `Bool` | J2.2: each column that a live app writes is not linked to `c`, or is `c`, or the app also writes `c`, or a sync joins it and `c` (Q-S4-3 (a)) |
+| `compat n m s0 s a live cols v` | `Verdict n m` | J2: the verdict of `v` at the end of `a` (Q-S4-10 (a), Q-S4-11 (a)). The first clause that fails gives its code (Q-S4-1 (a)): J2.1 each read, write and insert is present; J2.2 each read is fresh; J2.3 each read that the protocol adds is filled; J2.4 each column that needs a value on an insert gets one. A read that the protocol adds, in phase 1 or 2, gives `runtime (backfillDone t c)` |
+| `isRefused n m v`, `isAccessExclusive l`, `isScan c` | `Bool` | Tests of one constructor |
+| `usesCol n v c` | `Bool` | `v` reads, writes or inserts `c` |
+| `stageOk n m s0 s a live cols` | `Bool` | L1 at one stage: `compat` refuses no live app |
+| `accepts n m s0 s a lives cols` | `Bool` | L1: `stageOk` at each stage of `a` (PLAN 6.1). These are the `compat` terms that the C driver evaluates (J4) |
+| `dropHits n m s s1 h v`, `noDrops n m s s1 a v` | `Bool` | The step drops a column that `v` uses; no step of `a` drops a column that `v` uses |
+| `dropSafe n m s0 s a lives` | `Bool` | L4: no app that is live at a stage uses a column that a step at or before the stage drops |
+| `lockSafe n m s0 s a` | `Bool` | L6: no step of `a` is `scan` under `accessExclusive`. These are the `lockOf` and `scanOf` terms that the C driver evaluates (J5) |
+
+`accepts` and `dropSafe` take the live sets as an argument (Q-S4-16 (a)): the
+C driver makes them from the `deploy` and `retire` steps. A program proves a
+decision on its protocol by `refl` (PLAN 6.1, Q-S4-7 (a)).
+
+J2.3 includes columns dropped and added again under the same name:
+`needsFill` tracks additions through the chain, and `filled` is cleared by
+`addColumn`. The `phase` decision follows the most recent backfill, so a
+later backfill starts a new `backfillDone` runtime obligation.
+
 ### 6.1 Refusal codes of the domain
 
-`langc check` refuses a protocol with these two codes. The texts are in
-`docs/DIAGNOSTICS.md`.
+`langc check` refuses a protocol with these eight codes. The texts are in
+`docs/DIAGNOSTICS.md`. At each step, in chain order, the checker runs J1,
+then for `dropColumn` `REFUSE_DROP_REQUIRED` against the live set, then J5,
+then `compat` for each version that is live at the stage, in app
+declaration order (Q-S4-1 (a)). The first verdict that is not `compatible`
+or `runtime` refuses. At stage 0 the checker runs `compat` for each live
+version before the first step.
 
 | Code | Meaning | Fixture |
 |---|---|---|
 | `REFUSE_STEP_INDEX` | A protocol step is not legal at its source stage, because a conjunct of the `pre` function of the step is false. The message gives the step number, the step, the source stage, the first false conjunct and the arguments of the `pre` function. `expected` is the false conjunct and `found` is `false`. The span is the step word. | `test/json/REFUSE_STEP_INDEX.lang` |
 | `REFUSE_RENAME_INPLACE` | A protocol has a `renameColumn` step. A rename in place breaks each live old version at once (PLAN 3.3). Use the five-stage protocol of examples/rename. `found` is `renameColumn`. The span is the step word. The checker refuses the step before the names resolve (Q-S3-29 (a)). | `test/json/REFUSE_RENAME_INPLACE.lang` |
+| `REFUSE_DROP_REQUIRED` | A `dropColumn t c` step drops a column that a live version reads, writes or inserts (J4). The hint is "retire V before stage N". | `test/json/REFUSE_DROP_REQUIRED.lang` |
+| `REFUSE_MISSING_COLUMN` | A live version reads, writes or inserts a column that is not present at a stage (J2.1). | `test/json/REFUSE_MISSING_COLUMN.lang` |
+| `REFUSE_STALE_READ` | A live version reads a column that another live version updates through a different column, and no sync trigger joins the two columns (J2.2). | `test/json/REFUSE_STALE_READ.lang` |
+| `REFUSE_UNFILLED_READ` | A live version reads a column that the protocol adds, and no earlier backfill fills it (J2.3). | `test/json/REFUSE_UNFILLED_READ.lang` |
+| `REFUSE_NULL_INSERT` | A live version inserts into a table, and a not-null or CHECK column of that table gets no value from the insert or from a sync trigger (J2.4). | `test/json/REFUSE_NULL_INSERT.lang` |
+| `REFUSE_LOCK_SCAN` | A step scans its table under an ACCESS EXCLUSIVE lock (J5), for example `setNotNull` with no valid CHECK before it. | `test/json/REFUSE_LOCK_SCAN.lang` |
 
 Tests: each step word with a `pre` function has one check refusal with a
 false `pre` (`test/check/step-*.lang`, 9 files), and `test/check/rename-inplace.lang`
 refuses a `renameColumn` step. `test/eval/steps.lang` renames `users.name`
 to `users.display_name` in 11 steps and reads one fact of the stage after
-each step.
+each step. Each S4 code has one check refusal; a recreated-column regression
+brings `test/check/j4-*.lang` to 7 files. `test/check/rename-drop-early.lang` is the demo variant with no
+`retire v1`: `REFUSE_STALE_READ` at stage 5 (`dropSync`, Q-S4-13 (a)).
+`examples/rename.lang` is the demo (PLAN 4.6).
 
 ## 7. Target and instance encoding
 

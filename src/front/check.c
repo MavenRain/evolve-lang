@@ -3252,23 +3252,28 @@ static const Term *fm_fin(const Cogen *g, uint64_t j) {
   return cg_app(g, cg_app(g, cg_var(g, "pack"), cg_nat(g, j)), cg_var(g, "refl"));
 }
 
-/* flagIf (natEq (witness X) J) V_J (..), the last value with no test;
-   DFLT when there is no value. */
-static const Term *fm_choice(const Cogen *g, const char *x, const Term *const *v, uint32_t j, uint32_t count, const Term *dflt) {
-  const Term *test;
+/* flagIf (natEq K J) V_J (..), the last value with no test; DFLT when
+   there is no value. K is X when BARE (X : ℕ), else witness X. */
+static const Term *fm_pick(const Cogen *g, const char *x, int bare, const Term *const *v, uint32_t j, uint32_t count, const Term *dflt) {
+  const Term *key, *test;
   if (count == 0u)
     return dflt;
   if (j + 1u >= count)
     return v[j];
-  test = cg_app(g, cg_app(g, cg_var(g, "natEq"), cg_app(g, cg_var(g, "witness"), cg_var(g, x))), cg_nat(g, j));
-  return cg_app(g, cg_app(g, cg_app(g, cg_var(g, "flagIf"), test), v[j]), fm_choice(g, x, v, j + 1u, count, dflt));
+  key = bare ? cg_var(g, x) : cg_app(g, cg_var(g, "witness"), cg_var(g, x));
+  test = cg_app(g, cg_app(g, cg_var(g, "natEq"), key), cg_nat(g, j));
+  return cg_app(g, cg_app(g, cg_app(g, cg_var(g, "flagIf"), test), v[j]), fm_pick(g, x, bare, v, j + 1u, count, dflt));
 }
 
-/* A Cols n value: pack K (λ (i : Fin K) → the K columns). With no column
-   and n = 0, Fin 0 is Fin n. */
-static const Term *fm_cols(const Cogen *g, const Forms *f, const Term *const *v, uint32_t count) {
-  const Term *dflt = f->n > 0u ? fm_fin(g, 0) : cg_var(g, "i");
-  return cg_app(g, cg_app(g, cg_var(g, "pack"), cg_nat(g, count)), cg_lam(g, "i", fm_fin_type(g, count), fm_choice(g, "i", v, 0, count, dflt)));
+/* flagIf (natEq (witness X) J) V_J (..). */
+static const Term *fm_choice(const Cogen *g, const char *x, const Term *const *v, uint32_t j, uint32_t count, const Term *dflt) {
+  return fm_pick(g, x, 0, v, j, count, dflt);
+}
+
+/* A Cols n value: pack K (λ (j : ℕ) → the K columns), Q-S4-9 (a). The
+   default is pack 0 refl; with n = 0 it does not check (Q-S4-12 (a)). */
+static const Term *fm_cols(const Cogen *g, const Term *const *v, uint32_t count) {
+  return cg_app(g, cg_app(g, cg_var(g, "pack"), cg_nat(g, count)), cg_lam(g, "j", cg_var(g, "Nat"), fm_pick(g, "j", 1, v, 0, count, fm_fin(g, 0))));
 }
 
 static const char *fm_join(const Cogen *g, const char *x, const char *sep, const char *y) {
@@ -3293,8 +3298,8 @@ static const char *fm_ty_binder(const Cogen *g, const Forms *f) {
 /* The stage 0 State (Q-S3-22 (a)): a table column present, filled, its
    type, the key notNull and the others nullable; a column that only an
    addColumn names absent, not filled, the addColumn type, nullable; CHECK
-   absent; no sync. With n = 0 there is no table (each has a key), so the
-   owner and key fields are the identity. */
+   absent; no sync; no link. With n = 0 there is no table (each has a key),
+   so the owner and key fields are the identity. */
 static const Term *fm_start(const Cogen *g, const Forms *f) {
   Arena *a = g->c->m->arena;
   const Term **own = arena_alloc(a, (f->n + 1u) * sizeof *own);
@@ -3323,7 +3328,8 @@ static const Term *fm_start(const Cogen *g, const Forms *f) {
   s = cg_app(g, s, cg_lam(g, "c", fn, fm_choice(g, "c", nul, 0, f->n, cg_var(g, "nullable"))));
   s = cg_app(g, s, cg_lam(g, "c", fn, cg_var(g, "absent")));
   s = cg_app(g, s, cg_lam(g, "x", nat, cg_lam(g, "y", nat, cg_var(g, "false"))));
-  return cg_app(g, s, cg_lam(g, "c", fn, fm_choice(g, "c", in, 0, f->n, cg_var(g, "true"))));
+  s = cg_app(g, s, cg_lam(g, "c", fn, fm_choice(g, "c", in, 0, f->n, cg_var(g, "true"))));
+  return cg_app(g, s, cg_lam(g, "x", nat, cg_lam(g, "y", nat, cg_var(g, "false"))));
 }
 
 static Cogen fm_gen(Checker *c, const Decl *d) {
@@ -3386,7 +3392,7 @@ static int check_app_form(Checker *c, const Decl *d) {
     for (j = 0; j < d->item_count; j++)
       if (strcmp(d->items[j].word, APP_WORDS[w]) == 0)
         v[count++] = fm_fin(&g, col[j]);
-    cols[w] = fm_cols(&g, &f, v, count);
+    cols[w] = fm_cols(&g, v, count);
   }
   return cg_def_origin(&g, ORIGIN_PROGRAM, d->name, cg_app(&g, cg_var(&g, "App"), cg_nat(&g, f.n)), cg_app(&g, cg_app(&g, cg_var(&g, "pack"), cols[0]), cg_app(&g, cg_app(&g, cg_var(&g, "pack"), cols[1]), cols[2])));
 }
@@ -3564,6 +3570,176 @@ static int fm_step_pre(Checker *c, const Cogen *g, const Forms *f, const Decl *d
 /* protocol p where steps: p_c : Fin n for each column that it adds first,
    the stages p_0 .. p_k : State n m (one a step, Q-S3-27 (a)), and
    p : Chain n m p_0 p_k, each step witness refl. */
+/* The live set of each stage (Q-S4-2 (a)): the program apps in
+   declaration order. At stage 0 each app that no deploy of the protocol
+   names is live; deploy a adds a and retire a removes a, by app name.
+   Row i of live (count bytes) is stage i; U2 reads it. */
+typedef struct {
+  const Decl **apps;
+  size_t count;
+  unsigned char *live;
+} FormLive;
+
+static int form_is_barrier(const FormItem *it) {
+  return strcmp(it->word, "deploy") == 0 || strcmp(it->word, "retire") == 0;
+}
+
+static int form_live(Checker *c, const Decl *d, FormLive *fl) {
+  const DeclList *ds = c->decls;
+  size_t k = d->item_count, i, a;
+  fl->count = 0;
+  for (i = 0; i < ds->count; i++)
+    fl->count += ds->items[i].kind == DECL_APP;
+  fl->apps = arena_alloc(c->m->arena, (fl->count + 1u) * sizeof *fl->apps);
+  fl->live = arena_alloc(c->m->arena, (k + 1u) * fl->count + 1u);
+  if (fl->apps == NULL || fl->live == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  fl->count = 0;
+  for (i = 0; i < ds->count; i++)
+    if (ds->items[i].kind == DECL_APP)
+      fl->apps[fl->count++] = &ds->items[i];
+  for (a = 0; a < fl->count; a++) {
+    fl->live[a] = 1u;
+    for (i = 0; i < k; i++)
+      if (strcmp(d->items[i].word, "deploy") == 0 && strcmp(d->items[i].names[0].text, fl->apps[a]->name) == 0)
+        fl->live[a] = 0u;
+  }
+  for (i = 0; i < k; i++) {
+    const FormItem *it = &d->items[i];
+    unsigned char *row = &fl->live[(i + 1u) * fl->count];
+    memcpy(row, row - fl->count, fl->count);
+    for (a = 0; a < fl->count; a++)
+      if (form_is_barrier(it) && strcmp(it->names[0].text, fl->apps[a]->name) == 0)
+        row[a] = strcmp(it->word, "deploy") == 0;
+  }
+  return 1;
+}
+
+/* The constructor of the guest term T : TYPE, checked and normalized as
+   fm_step_pre does, in NAME; the constructor of its last field in ARG
+   (NULL when it has none). */
+static int fm_ctor(Checker *c, const Term *t, const Term *type, const char **name, const char **arg) {
+  uint64_t level = 0;
+  const Core *k;
+  const Value *v, *x;
+  if (t == NULL || type == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  cg_reset(c);
+  k = check_type_at(c, type, &level, 0);
+  v = k == NULL ? NULL : here(c, check(c, t, here(c, k)));
+  if (v == NULL)
+    return 0;
+  if (!val_is(v, OP_CTOR) || v->inst >= c->m->ctor_count)
+    return FAIL(c, "INTERNAL", "a J4 or J5 term is not a constructor");
+  x = v->argc == 0u ? NULL : v->args[v->argc - 1u];
+  *name = c->m->ctors[v->inst].name;
+  *arg = val_is(x, OP_CTOR) && x->inst < c->m->ctor_count ? c->m->ctors[x->inst].name : NULL;
+  return 1;
+}
+
+/* The J4 and J5 codes of PLAN 4.4. The hint (Q-S4-5 (a)) is H0, the
+   version when HV, H1, the stage when HN. */
+typedef struct {
+  const char *ctor, *code, *when, *h0;
+  int hv;
+  const char *h1;
+  int hn;
+} Refusal;
+
+static const Refusal REFUSALS[] = {
+  {"dropRequired", "REFUSE_DROP_REQUIRED", "reads, writes or inserts the column that the step drops", "retire ", 1, " before stage ", 1},
+  {"lockScan", "REFUSE_LOCK_SCAN", "scans its table under an ACCESS EXCLUSIVE lock", "add addNotNullCheck and validate before setNotNull", 0, "", 0},
+  {"missingColumn", "REFUSE_MISSING_COLUMN", "needs a column that is not present", "move the deploy of ", 1, " after stage ", 1},
+  {"staleRead", "REFUSE_STALE_READ", "reads a column that another live version updates through a different column, with no sync trigger", "install a sync trigger before stage ", 0, "", 1},
+  {"unfilledRead", "REFUSE_UNFILLED_READ", "reads a column that no earlier backfill fills", "add a backfill step before the deploy of ", 1, "", 0},
+  {"nullInsert", "REFUSE_NULL_INSERT", "inserts no value into a not-null or CHECK column and no trigger fills it", "install a sync trigger, or retire ", 1, " before stage ", 1},
+};
+
+static const Refusal *fm_refusal(const char *ctor) {
+  size_t r;
+  for (r = 0; ctor != NULL && r < sizeof REFUSALS / sizeof *REFUSALS; r++)
+    if (strcmp(REFUSALS[r].ctor, ctor) == 0)
+      return &REFUSALS[r];
+  return NULL;
+}
+
+/* A J4 or J5 refusal at stage I: the span at the step word (at the app
+   name for stage 0); found is the app (the step word for J5). */
+static int fm_j4_refuse(Checker *c, const Cogen *g, const Decl *d, size_t i, const Refusal *r, const Decl *app) {
+  const FormItem *it = i == 0u ? NULL : &d->items[i - 1u];
+  const char *n, *where, *who, *hint, *step = it == NULL ? "" : fm_step_text(g, it);
+  char num[24];
+  if (r == NULL)
+    return FAIL(c, "INTERNAL", "a compat verdict at stage %zu has no refusal code", i);
+  snprintf(num, sizeof num, "%zu", i);
+  n = cg_join(g, num, "");
+  where = it == NULL || step == NULL ? fm_join(g, "stage", " ", n) : fm_join(g, fm_join(g, "stage", " ", n), " (", fm_join(g, step, ")", ""));
+  who = app == NULL ? "the step " : fm_join(g, "the live version ", app->name, " ");
+  hint = fm_join(g, fm_join(g, r->h0, r->hv ? app->name : "", r->h1), r->hn ? n : "", "");
+  if (step == NULL || where == NULL || who == NULL || hint == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  c->m->def = d->name;
+  return diag_fail_at(c->m->diag, r->code, c->m->def, it == NULL ? form_span(app->name, app->line, app->col) : form_span(it->word, it->line, it->col), NULL, app == NULL ? it->word : app->name, NULL, "%s: %s%s; %s", where, who, r->when, hint);
+}
+
+/* A dropColumn step I: an app live at stage I that reads, writes or
+   inserts the dropped column refuses (Q-S4-1 (a)). */
+static int fm_drop_required(Checker *c, const Cogen *g, const Decl *d, const FormLive *fl, size_t i) {
+  const FormItem *it = &d->items[i - 1u];
+  size_t a, j;
+  if (strcmp(it->word, "dropColumn") != 0)
+    return 1;
+  for (a = 0; a < fl->count; a++)
+    for (j = 0; fl->live[i * fl->count + a] && j < fl->apps[a]->item_count; j++)
+      if (strcmp(fl->apps[a]->items[j].names[0].text, it->names[0].text) == 0 && strcmp(fl->apps[a]->items[j].names[1].text, it->names[1].text) == 0)
+        return fm_j4_refuse(c, g, d, i, fm_refusal("dropRequired"), fl->apps[a]);
+  return 1;
+}
+
+/* F n m S S1 STEP */
+static const Term *fm_of_step(const Cogen *g, const Forms *f, const char *head, const char *s, const char *s1, const Term *step) {
+  return cg_app(g, cg_app(g, cg_app(g, fm_nm(g, f, head), cg_var(g, s)), cg_var(g, s1)), step);
+}
+
+/* J5 (PLAN 5.1): step I from S to S1 scans its table under ACCESS
+   EXCLUSIVE. */
+static int fm_lock_scan(Checker *c, const Cogen *g, const Forms *f, const Decl *d, size_t i, const char *s, const char *s1, const Term *step) {
+  const char *lock, *scan, *arg;
+  if (!fm_ctor(c, fm_of_step(g, f, "lockOf", s, s1, step), cg_var(g, "LockMode"), &lock, &arg) || !fm_ctor(c, fm_of_step(g, f, "scanOf", s, s1, step), cg_var(g, "ScanClass"), &scan, &arg))
+    return 0;
+  return strcmp(lock, "accessExclusive") != 0 || strcmp(scan, "scan") != 0 || fm_j4_refuse(c, g, d, i, fm_refusal("lockScan"), NULL);
+}
+
+/* J4 at stage I (Q-S4-1 (a)): for each app live there, in declaration
+   order, the guest term compat n m S0 S CHAIN LIVE COLS v. compatible and
+   runtime go on; refused CODE refuses. LIVE has the ℕ form of fm_cols. */
+static int fm_stage(Checker *c, const Cogen *g, const Forms *f, const Decl *d, const FormLive *fl, size_t i, const char *s0, const char *s, const Term *chain, const Term *cols) {
+  const unsigned char *row = &fl->live[i * fl->count];
+  const Term **v = arena_alloc(c->m->arena, (fl->count + 1u) * sizeof *v);
+  const Term *live = NULL;
+  uint32_t k = 0;
+  size_t a;
+  if (v == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  for (a = 0; a < fl->count; a++)
+    if (row[a])
+      v[k++] = cg_var(g, fl->apps[a]->name);
+  /* A protocol and an app cannot share a name. Its name is therefore a
+     safe local index for the live apps, including an app named j. */
+  if (k > 0u)
+    live = cg_app(g, cg_app(g, cg_var(g, "pack"), cg_nat(g, k)), cg_lam(g, d->name, cg_var(g, "Nat"), fm_pick(g, d->name, 1, v, 0, k, v[k - 1u])));
+  for (a = 0; a < fl->count; a++) {
+    const char *name, *arg;
+    if (!row[a])
+      continue;
+    if (!fm_ctor(c, cg_app(g, cg_app(g, cg_app(g, cg_app(g, cg_app(g, cg_app(g, fm_nm(g, f, "compat"), cg_var(g, s0)), cg_var(g, s)), chain), live), cols), cg_var(g, fl->apps[a]->name)), fm_nm(g, f, "Verdict"), &name, &arg))
+      return 0;
+    if (strcmp(name, "refused") == 0)
+      return fm_j4_refuse(c, g, d, i, fm_refusal(arg), fl->apps[a]);
+  }
+  return 1;
+}
+
 static int check_protocol(Checker *c, const Decl *d) {
   Cogen g = fm_gen(c, d);
   Forms f;
@@ -3571,7 +3747,9 @@ static int check_protocol(Checker *c, const Decl *d) {
   uint32_t *x = arena_alloc(c->m->arena, (3u * k + 1u) * sizeof *x);
   const StepForm **sf = arena_alloc(c->m->arena, (k + 1u) * sizeof *sf);
   const char *s0 = fm_join(&g, d->name, "_", "0"), *prev = s0;
-  const Term *chain;
+  const Term *chain, *cols, **colv;
+  uint32_t w;
+  FormLive live;
   if (x == NULL || sf == NULL || s0 == NULL)
     return FAIL(c, "OOM", "out of memory");
   if (!form_no_rename(c, d) || !forms_scan(c, &f))
@@ -3598,9 +3776,17 @@ static int check_protocol(Checker *c, const Decl *d) {
     if (fc->name == &d->items[i].names[1] && !cg_def_origin(&g, ORIGIN_PROGRAM, fm_join(&g, fc->table, "_", fc->name->text), fm_fin_type(&g, f.n), fm_fin(&g, x[3u * i + 1u])))
       return 0;
   }
-  if (!cg_def_origin(&g, ORIGIN_PROGRAM, s0, fm_nm(&g, &f, "State"), fm_start(&g, &f)))
+  if (!cg_def_origin(&g, ORIGIN_PROGRAM, s0, fm_nm(&g, &f, "State"), fm_start(&g, &f)) || !form_live(c, d, &live))
     return 0;
+  colv = arena_alloc(c->m->arena, (f.n + 1u) * sizeof *colv);
+  if (colv == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  for (w = 0; w < f.n; w++)
+    colv[w] = fm_fin(&g, w);
+  cols = fm_cols(&g, colv, f.n);
   chain = cg_app(&g, fm_nm(&g, &f, "nil"), cg_var(&g, s0));
+  if (!fm_stage(c, &g, &f, d, &live, 0, s0, s0, chain, cols))
+    return 0;
   for (i = 0; i < k; i++) {
     const FormItem *it = &d->items[i];
     char num[24];
@@ -3616,6 +3802,8 @@ static int check_protocol(Checker *c, const Decl *d) {
     if (cur == NULL || !cg_def_origin(&g, ORIGIN_PROGRAM, cur, fm_nm(&g, &f, "State"), sf[i]->post == NULL ? cg_var(&g, prev) : fm_step_args(&g, &f, sf[i]->post, prev, sf[i], it, &x[3u * i])))
       return cur == NULL ? FAIL(c, "OOM", "out of memory") : 0;
     chain = cg_app(&g, cg_app(&g, cg_app(&g, cg_app(&g, cg_app(&g, fm_nm(&g, &f, "snoc"), cg_var(&g, s0)), cg_var(&g, prev)), cg_var(&g, cur)), chain), step);
+    if (!fm_drop_required(c, &g, d, &live, i + 1u) || !fm_lock_scan(c, &g, &f, d, i + 1u, prev, cur, step) || !fm_stage(c, &g, &f, d, &live, i + 1u, s0, cur, chain, cols))
+      return 0;
     prev = cur;
   }
   return cg_def_origin(&g, ORIGIN_PROGRAM, d->name, cg_app(&g, cg_app(&g, fm_nm(&g, &f, "Chain"), cg_var(&g, s0)), cg_var(&g, prev)), chain);

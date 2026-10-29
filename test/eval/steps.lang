@@ -1,11 +1,13 @@
 -- The state after each step word (S3 U4): a rename of users.name to
 -- users.display_name in 11 steps. Each def reads one fact of the stage after
 -- its step. deploy and retire do not change the state.
+-- For J2.4 and J4 (S4 U2, Q-S4-8 (a)), v0 also inserts users.name, v1 also
+-- inserts users.display_name, and `retire v0` is before `dropSync`.
 table users (name : text, id : bigint key)
 
-app v0 (reads users.name, reads users.id, writes users.name, inserts users.id)
+app v0 (reads users.name, reads users.id, writes users.name, inserts users.id, inserts users.name)
 
-app v1 (reads users.display_name, reads users.id, writes users.display_name, inserts users.id)
+app v1 (reads users.display_name, reads users.id, writes users.display_name, inserts users.id, inserts users.display_name)
 
 protocol rename where
   addColumn users display_name text
@@ -16,8 +18,8 @@ protocol rename where
   validate users display_name
   setNotNull users display_name
   dropCheck users display_name
-  dropSync users name display_name
   retire v0
+  dropSync users name display_name
   dropColumn users name
 
 afterAddColumn : Bool
@@ -45,10 +47,15 @@ afterDropCheck : Bool
 afterDropCheck = isAbsent (check 3 1 rename_8 users_display_name)
 
 afterDropSync : Bool
-afterDropSync = sync 3 1 rename_9 (witness users_name) (witness users_display_name)
+afterDropSync = sync 3 1 rename_10 (witness users_name) (witness users_display_name)
 
 afterRetire : Bool
-afterRetire = present 3 1 rename_10 users_name
+afterRetire = present 3 1 rename_9 users_name
 
 afterDropColumn : Bool
 afterDropColumn = present 3 1 rename_11 users_name
+
+-- J2.4 (S4 U1): v0 inserts the key users.id, so compat gives v0 at stage 0
+-- no nullInsert.
+compatV0Start : Verdict 3 1
+compatV0Start = compat 3 1 rename_0 rename_0 (nil 3 1 rename_0) (pack 1 (λ (j : ℕ) → v0)) (pack 3 (λ (j : ℕ) → flagIf (natEq j 0) users_name (flagIf (natEq j 1) users_id users_display_name))) v0

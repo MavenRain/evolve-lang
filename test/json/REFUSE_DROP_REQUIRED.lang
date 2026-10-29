@@ -1,0 +1,6 @@
+table users (name : text, id : bigint key)
+
+app v1 (reads users.id, inserts users.id, inserts users.name)
+
+protocol p where
+  dropColumn users name

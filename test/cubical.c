@@ -58,6 +58,14 @@ done:
 
 int main(void) {
   static const struct { const char *label; const char *source; const char *code; } checks[] = {
+    {"live app named j",
+     "table users (id : bigint key, name : text)\n"
+     "app j (reads users.name)\n"
+     "protocol p where\n  addColumn users copy text\n", NULL},
+    {"live apps with primed index names",
+     "table users (id : bigint key, name : text)\n"
+     "app j (reads users.name)\napp j' (writes users.name)\napp j'' (inserts users.id)\n"
+     "protocol p where\n  addColumn users copy text\n", NULL},
     {"Glue pair branch",
      "value : (A : Type 0) → (e : Equiv ((x : ℕ) × ℕ) A) → (j : I) → Glue A [ j ↦ pack ((x : ℕ) × ℕ) e ]\n"
      "value A e j = glue [ j ↦ pack 3 7 ] (witness e (pack 3 7))\n", NULL},

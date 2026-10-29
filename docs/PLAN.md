@@ -96,7 +96,7 @@ declares one gets `REFUSE_DATA`.
 
 | Former | Use in evolve-lang | Class | Reason |
 |---|---|---|---|
-| Pi, `A → B` | every function; `compat : App → Stage → Verdict`; requirement vectors `Fin k → Col` | ambient | LCC |
+| Pi, `A → B` | every function; `compat n m s0 s a live cols v : Verdict n m` (Q-S4-10 (a), Q-S4-11 (a)); requirement vectors `ℕ → Col` (Q-S4-9 (a)) | ambient | LCC |
 | Sigma, `(x : A) × B` | `Column`, `Table`, `App`, schema `State` | ambient | iterated anonymous Sigma; no `record` form (as leaf-lang S2-Q3 (b)) |
 | `Fin n` | column names, stage indices, wave indices | defined | `(k : ℕ) × Path Bool (lt k n) true` |
 | vectors | the columns of a table, the reads and writes of an app | ambient | `Fin n → X`, no new former |
@@ -278,8 +278,12 @@ emitted SQL and a `runtime` row in the report:
 
 ### 4.6 The rename example (D5)
 
-Versions: `v1` reads, writes and inserts `name`. `v3` reads, writes and
-inserts `display_name`. The table groups the steps by the five stages of\nthe description (D5); the checker gives each step its own stage number.
+The demo is `examples/rename.lang`. Versions: `v1` reads, writes and
+inserts `name`. `v3` reads, writes and inserts `display_name`. Each version
+also reads and inserts the key `id`: an app that inserts into a table also
+inserts its key (J2.4, Q-S4-8 (a)). The table groups the steps by the five
+stages of the description (D5); the checker gives each step its own stage
+number. D5 stage 5 is the checker stages 5, 6 and 7.
 
 | D5 stage | Step | Live | v1 | v3 |
 |---|---|---|---|---|
@@ -290,9 +294,12 @@ inserts `display_name`. The table groups the steps by the five stages of\nthe de
 | 4 | `deploy v3` (barrier) | v1, v3 | compatible (the sync trigger keeps `name` fresh) | runtime: `backfillDone users display_name` |
 | 5 | `retire v1` (barrier), `dropSync`, `dropColumn users name` | v3 | refused: `REFUSE_MISSING_COLUMN` | compatible |
 
-The demo variant drops `name` at stage 5 with no `retire v1`. The checker
-refuses it with `REFUSE_DROP_REQUIRED` and the hint "retire v1 before stage
-5".
+The demo variant `test/check/rename-drop-early.lang` has no `retire v1`: it
+runs `dropSync` and `dropColumn users name` while `v1` is live. The checker
+refuses it at checker stage 5 (`dropSync`) with `REFUSE_STALE_READ`: with no
+sync, a write of `display_name` by `v3` does not change the `name` that `v1`
+reads (Q-S4-13 (a)). The check stops at the first refusal, so it does not
+get to `REFUSE_DROP_REQUIRED` at the `dropColumn` stage.
 
 ## 5. Targets
 
@@ -317,14 +324,21 @@ Lock and scan facts. Each was checked on 2026-10-25 against the PostgreSQL
 | Step | SQL | Lock | Scan class |
 |---|---|---|---|
 | `addColumn` | `ADD COLUMN` with no default, nullable | ACCESS EXCLUSIVE (the ALTER TABLE default) | metadata: "In neither case is a rewrite of the table required" |
-| `installSync`, `dropSync` | `CREATE TRIGGER`, `DROP TRIGGER` | SHARE ROW EXCLUSIVE for CREATE TRIGGER | metadata |
+| `installSync` | `CREATE TRIGGER` | SHARE ROW EXCLUSIVE | metadata |
+| `dropSync` | `DROP TRIGGER` | ACCESS EXCLUSIVE (F-U0-2 (a); see the DROP TRIGGER note below) | metadata |
 | `backfill` | `CALL evolve_backfill_...()`: a PL/pgSQL procedure that updates one key range, writes the ledger and commits, then goes to the next range | ROW EXCLUSIVE and row locks per batch | batched |
 | `dropColumn` | `DROP COLUMN` | ACCESS EXCLUSIVE | metadata: the column becomes invisible, no rewrite |
 | `addNotNullCheck` | `ADD CONSTRAINT ... CHECK (c IS NOT NULL) NOT VALID` | ACCESS EXCLUSIVE | metadata: NOT VALID skips the scan |
 | `validate` | `VALIDATE CONSTRAINT` | SHARE UPDATE EXCLUSIVE (does not conflict with ROW EXCLUSIVE or ACCESS SHARE) | scan |
 | `setNotNull` | `SET NOT NULL` after a valid CHECK | ACCESS EXCLUSIVE | metadata: "if a valid CHECK constraint exists ... which proves no NULL can exist, then the table scan is skipped" |
+| `dropCheck` | `DROP CONSTRAINT` of the CHECK | ACCESS EXCLUSIVE (the ALTER TABLE default) | metadata (Q-S4-6 (a)) |
 | `createIndexConcurrently` | `CREATE INDEX CONCURRENTLY` outside a transaction block | SHARE UPDATE EXCLUSIVE | scan; a failure leaves an INVALID index, which the stage drops and builds again |
-| `deploy`, `retire` | registry update only | no table lock on user tables | none |
+| `deploy`, `retire` | registry update only | no table lock on user tables (`noLock`) | none (`noScan`) |
+
+The domain gives these rows as `lockOf` and `scanOf` (S4, Q-S4-6 (a)), one
+case for each `Step` constructor. `setNotNull` is `scan` when the CHECK of
+the column is not `valid` in the source state, else `metadata`.
+`createIndexConcurrently` is S6 (Q11); `Step` has no constructor for it.
 
 Other confirmed facts: `lock_timeout` aborts a statement that waits longer
 than the limit for a lock, and "applies separately to each lock
@@ -336,6 +350,14 @@ VALID for "foreign-key, CHECK, and not-null constraints" (O4).
 NOT confirmed in the docs (2026-10-25): a lock request that waits blocks
 the later requests behind it. `explicit-locking.html` does not say so. The
 plan does not rely on it; `lock_timeout` bounds each wait (O5).
+
+DROP TRIGGER, NOT confirmed in the docs (2026-10-28): the 18
+`explicit-locking.html` page does not name DROP TRIGGER, and the page does
+not list each command that takes ACCESS EXCLUSIVE. A pgsql-docs thread of
+June 2024 ("Re: DROP TRIGGER lock") says that DROP TRIGGER takes ACCESS
+EXCLUSIVE and that the docs do not say so. The domain uses ACCESS EXCLUSIVE,
+the stronger lock (F-U0-2 (a)). `dropSync` is `metadata`, so J5 does not
+refuse it with either lock.
 
 The offline gate compares the emitted files with golden files in
 `test/sql/`. `make check-pg` (optional, not in `make check`) runs the stages
@@ -388,6 +410,17 @@ machine on 2026-10-25 (O1, O2).
 - L5 chain laws: `_⨾_` is associative and `nil` is its unit (`Path`).
 - L6 lock map: no admitted step has scan class `scan` under ACCESS
   EXCLUSIVE.
+
+S4 states L1, L4, L5 and L6 (Q-S4-7 (a)). L5 is
+`test/eval/chain-laws.lang`: the right unit by `refl`, the left unit and
+associativity by `fold`. L1, L4 and L6 are the domain decisions `accepts`,
+`dropSafe` and `lockSafe` (`domain/domain.lang`). A program proves a
+decision on its protocol by `refl`: `examples/rename.lang` has
+`stageSoundProof`, `dropSoundProof` and `lockSoundProof`, and
+`test/eval/checker.lang` proves the three decisions on each of the 11 step
+forms (33 proofs). `accepts` and `dropSafe` take the live set of each stage
+as an argument, as the C driver makes it from the `deploy` and `retire`
+steps (Q-S4-16 (a)). L2 and L3 are S6.
 
 ### 6.2 Outside the denotation
 
@@ -448,7 +481,7 @@ on the new checks, docs, close (stage, commit message, next prompt).
 | S2d | kernel part 4: `Fin n` as the defined Sigma of 2.2; O12 (kit `Sum`, `Unit`), the rest of O14, O15 (ASCII value printer); `docs/STATUS.md` S2 section | `Fin` tests; full gate; mutants on the `Fin` bound. DONE. Measured 2026-10-27: `make check` EXIT 0: examples 10; parse refusals 10; check refusals 54; evals 62; ir 10; wasm 13; differential 773 cases, 0 mismatches; fmt 101 canonical, 6 non-canonical pairs; json 26 fixtures, diagnostics 38 codes (24 with a fixture, 14 with no fixture); cubical 36 checks, 22 round trips. U1: the value printer (O15, Q-S2d-8 (a)), round trips 8 to 21. U2: `Sum`, `inl`, `inr`, `either` removed (O12, Q-S2d-4 (a)), Ops 51 to 47 (O14), `map` and `bind` on `Option` only. U3: the builtin `Fin` (Q-S2d-1 (a)), the Sigma `(k : ℕ) × Path Bool (natLe (natAdd k 1) n) true`, no new Op. U4: 7 mutants on the `Fin` bound. U5: the printer agrees with `langc fmt` (F-U1b-1, F-U5-1), the check "Fin with a neutral bound" (F-U4-3), the ruled docs. 7 mutants KILLED of 7 (docs/STATUS.md, S2d) |
 | S2e | univalence: `Glue`, `glue`, `unglue`, `ua` (2.2, law L3). Port from zkpolicy-lang 1d263fb. It must land before S6; it can run at any time after S2d | `ua` transport test; mutants on `transp_glue` and `hcomp_glue`. DONE. Measured 2026-10-27: `make check` EXIT 0: examples 11; parse refusals 10; check refusals 59; evals 69; ir 11; wasm 14; differential 883 cases, 0 mismatches; fmt 116 canonical, 6 non-canonical pairs; json 30 fixtures, diagnostics 43 codes (28 with a fixture, 15 with no fixture); cubical 49 checks, 24 round trips. U1: the core formers `Glue`, `glue`, `unglue` (Ops 47 to 50), the kernel prelude `src/front/prelude.lang` with `isContr`, `fiber`, `isEquiv`, `Equiv`, `idEquiv`, `ua` (Q-S2e-1 (a), core names), the codes `GLUE_EQUIV`, `GLUE_COVER`, `GLUE_BOUNDARY`, `UNGLUE_TYPE` and `REFUSE_RUNTIME_GLUE`, 5 new check refusals. U2: the Kan rules transp_glue, hcomp_glue, hcomp at `Type 0` (hcomp_univ, with the prelude `transpEquiv`) and Glue eta (Q-S2e-2 (a)). U3: the `ua` transport checks in `test/cubical.c` (Q-S2e-7 (a)), `examples/glue.lang`, the eval fixtures, `test/ir/glue.lang`. U4: 5 mutants (Q-S2e-8 (a)); the rows for M1, M3 and M5 (Q-S2e-13 (a), Q-S2e-14 (c)). U5: the docs. 5 mutants KILLED of 5: M1 transp_glue (cubical "ua fiber center not in normal form"), M2 transp_glue (`examples/glue.lang` `uaBetaSwap`), M3 hcomp_glue (cubical "unglue of an hcomp at a Glue type"), M4 hcomp_glue (`examples/glue.lang` `hcompGlue`), M5 hcomp_univ (`test/eval/hcomp-line` `hcompEAt1`) |
 | S3 | domain: `ColType`, `Null`, `CState`, `State`, `App`, the steps, `Step`, `Chain`; the `table`, `app` and `protocol` forms (Q9); `REFUSE_STEP_INDEX`, `REFUSE_RENAME_INPLACE` | one test per step index; mutants on each precondition. DONE. Measured 2026-10-28: `make check` EXIT 0: examples 11; parse refusals 10; check refusals 71; evals 83; ir 11; wasm 15; differential 889 cases, 0 mismatches; fmt 134 canonical, 7 non-canonical pairs; json 32 fixtures, diagnostics 45 codes (30 with a fixture, 15 with no fixture); cubical 50 checks, 29 round trips. U0: the eliminator over indexed families, `fold` with a motive (Op `OP_ELIM_FAMILY`, Ops 50 to 51), `data Walk`. U1: the domain in `domain/domain.lang` (`ColType`, `Null`, `CState`, `State`, `App`, 9 pre and 9 post functions, `Step`, `Chain`, `compose`, `length`, `Stage`), no `nil` row (Q-S3-7 (a)). U2: the `table`, `app` and `protocol` forms (Q-S3-22 to Q-S3-27). U3: J1, the step words and the codes `REFUSE_STEP_INDEX` and `REFUSE_RENAME_INPLACE` (Q-S3-28 to Q-S3-30). U4: one `test/check` file for each pre, `rename-inplace.lang`, `test/eval/steps.lang`. U5: the docs (SPEC.md sections 5 and 6, Q-S3-31 (a); `docs/STATUS.md` S2e and S3, Q-S3-8 (a)). 10 mutants KILLED of 10: M1 to M9 set one pre to `true` (the `test/check/step-*.lang` file of that pre), M10 removes the rename refusal of `check_protocol` (`test/check/rename-inplace.lang`); also M-U0-1 to M-U0-5 KILLED (docs/STATUS.md, S3) |
-| S4 | the checker: `compat`, `fresh`, `segments`, J4, J5, the codes of 4.4; `examples/rename` GREEN and the drop-early variant refused (the demo); L1, L4, L5, L6 | one test per code with its JSON shape; mutants on each judgement |
+| S4 | the checker: `compat`, `fresh`, `segments`, J4, J5, the codes of 4.4; `examples/rename` GREEN and the drop-early variant refused (the demo); L1, L4, L5, L6 | one test per code with its JSON shape; mutants on each judgement. DONE. Measured 2026-10-28: `make check` EXIT 0: examples 12; parse refusals 10; check refusals 79; evals 185; ir 12; wasm 16; differential 892 cases, 0 mismatches; fmt 153 canonical, 7 non-canonical pairs; json 38 fixtures, diagnostics 51 codes (36 with a fixture, 15 with no fixture); cubical 52 checks, 29 round trips. U0: the 9th `State` field `link`, `Code`, `Fact` (only `backfillDone`), `Verdict`, `LockMode`, `ScanClass`, `lockOf` and `scanOf` (Q-S4-3, Q-S4-4, Q-S4-6 (a), F-U0-2). U1: J2 (`compat`, J2.1 to J2.4), `fresh`, `segments`, the live set, the ℕ-indexed `Cols` and `Live` (Q-S4-2, Q-S4-8 to Q-S4-12 (a)). U2: J4 and J5 in `check_protocol`, the 6 codes of 4.4 with 6 json fixtures and 7 `test/check/j4-*.lang` files (Q-S4-1, Q-S4-5, Q-S4-13, Q-S4-14 (a)). U3: `examples/rename.lang` GREEN and `test/check/rename-drop-early.lang` refused (`REFUSE_STALE_READ` at stage 5). U4: L5 (`test/eval/chain-laws.lang`); L1, L4 and L6 as the decisions `accepts`, `dropSafe` and `lockSafe`, by `refl` (Q-S4-7, Q-S4-15, Q-S4-16 (a)). U5: the docs (SPEC.md sections 5 and 6; PLAN 2.2, 4.6, 5.1 and 6.1; `docs/STATUS.md` S4; `README.md`). 9 mutants KILLED of 9: M1 to M4 set one J2 clause to `true`, M5 removes the drop-required refusal, M6 changes the scan class of `setNotNull`, M7 makes `addColumn` a barrier, M8 changes the J4 first-code order, M9 changes the `runtime` phase (docs/STATUS.md, S4) |
 | S5 | JSON report (port of `json.c`), `Fact`, `Guard`, runtime rows | golden reports; mutants on the verdict map |
 | S6 | SQL writer: stage files, `lock_timeout`, guards, ledger, backfill procedure, sync triggers, the CHECK path, `createIndexConcurrently` (Q11); L2, L3; `make check-pg` (optional) | golden SQL files; mutants on lock and guard output |
 | S7 | Wasm oracle writer | differential gate against `langc eval` |

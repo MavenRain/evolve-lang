@@ -1,0 +1,4 @@
+table users (name : text, id : bigint key)
+
+protocol p where
+  setNotNull users name

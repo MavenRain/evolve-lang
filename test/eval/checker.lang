@@ -1,0 +1,370 @@
+-- The checker types (S4 U0): the lock and the scan class of each step form
+-- (PLAN 5.1, Q-S4-6 (a)) and the link field (Q-S4-3 (a)). Each step term is
+-- written here on a stage of the protocol `base`, or on a state after it.
+table users (name : text, id : bigint key)
+
+app v0 (reads users.id)
+
+protocol base where
+  addColumn users display_name text
+
+usersTbl : Fin 1
+usersTbl = pack 0 refl
+
+synced : State 3 1
+synced = postInstallSync 3 1 base_1 usersTbl users_name users_display_name
+
+unsynced : State 3 1
+unsynced = postDropSync 3 1 synced usersTbl users_name users_display_name
+
+copied : State 3 1
+copied = postBackfill 3 1 base_1 usersTbl users_display_name users_name 1000
+
+guarded : State 3 1
+guarded = postAddNotNullCheck 3 1 base_1 usersTbl users_display_name
+
+checked : State 3 1
+checked = postValidate 3 1 guarded usersTbl users_display_name
+
+lockAddColumn : LockMode
+lockAddColumn = lockOf 3 1 base_0 base_1 (addColumn 3 1 base_0 usersTbl users_display_name text refl)
+
+lockInstallSync : LockMode
+lockInstallSync = lockOf 3 1 base_1 synced (installSync 3 1 base_1 usersTbl users_name users_display_name refl)
+
+lockDropSync : LockMode
+lockDropSync = lockOf 3 1 synced unsynced (dropSync 3 1 synced usersTbl users_name users_display_name refl)
+
+lockBackfill : LockMode
+lockBackfill = lockOf 3 1 base_1 copied (backfill 3 1 base_1 usersTbl users_display_name users_name 1000 refl)
+
+lockDeploy : LockMode
+lockDeploy = lockOf 3 1 base_1 base_1 (deploy 3 1 base_1 v0)
+
+lockRetire : LockMode
+lockRetire = lockOf 3 1 base_1 base_1 (retire 3 1 base_1 v0)
+
+lockDropColumn : LockMode
+lockDropColumn = lockOf 3 1 base_1 (postDropColumn 3 1 base_1 usersTbl users_name) (dropColumn 3 1 base_1 usersTbl users_name refl)
+
+lockAddNotNullCheck : LockMode
+lockAddNotNullCheck = lockOf 3 1 base_1 guarded (addNotNullCheck 3 1 base_1 usersTbl users_display_name refl)
+
+lockValidate : LockMode
+lockValidate = lockOf 3 1 guarded checked (validate 3 1 guarded usersTbl users_display_name refl)
+
+lockSetNotNull : LockMode
+lockSetNotNull = lockOf 3 1 checked (postSetNotNull 3 1 checked usersTbl users_display_name) (setNotNull 3 1 checked usersTbl users_display_name refl)
+
+lockDropCheck : LockMode
+lockDropCheck = lockOf 3 1 guarded (postDropCheck 3 1 guarded usersTbl users_display_name) (dropCheck 3 1 guarded usersTbl users_display_name refl)
+
+scanAddColumn : ScanClass
+scanAddColumn = scanOf 3 1 base_0 base_1 (addColumn 3 1 base_0 usersTbl users_display_name text refl)
+
+scanInstallSync : ScanClass
+scanInstallSync = scanOf 3 1 base_1 synced (installSync 3 1 base_1 usersTbl users_name users_display_name refl)
+
+scanDropSync : ScanClass
+scanDropSync = scanOf 3 1 synced unsynced (dropSync 3 1 synced usersTbl users_name users_display_name refl)
+
+scanBackfill : ScanClass
+scanBackfill = scanOf 3 1 base_1 copied (backfill 3 1 base_1 usersTbl users_display_name users_name 1000 refl)
+
+scanDeploy : ScanClass
+scanDeploy = scanOf 3 1 base_1 base_1 (deploy 3 1 base_1 v0)
+
+scanRetire : ScanClass
+scanRetire = scanOf 3 1 base_1 base_1 (retire 3 1 base_1 v0)
+
+scanDropColumn : ScanClass
+scanDropColumn = scanOf 3 1 base_1 (postDropColumn 3 1 base_1 usersTbl users_name) (dropColumn 3 1 base_1 usersTbl users_name refl)
+
+scanAddNotNullCheck : ScanClass
+scanAddNotNullCheck = scanOf 3 1 base_1 guarded (addNotNullCheck 3 1 base_1 usersTbl users_display_name refl)
+
+scanValidate : ScanClass
+scanValidate = scanOf 3 1 guarded checked (validate 3 1 guarded usersTbl users_display_name refl)
+
+scanSetNotNull : ScanClass
+scanSetNotNull = scanOf 3 1 checked (postSetNotNull 3 1 checked usersTbl users_display_name) (setNotNull 3 1 checked usersTbl users_display_name refl)
+
+scanSetNotNullNoCheck : ScanClass
+scanSetNotNullNoCheck = scanOf 3 1 base_1 (postSetNotNull 3 1 base_1 usersTbl users_display_name) (setNotNull 3 1 base_1 usersTbl users_display_name refl)
+
+scanSetNotNullNotValid : ScanClass
+scanSetNotNullNotValid = scanOf 3 1 guarded (postSetNotNull 3 1 guarded usersTbl users_display_name) (setNotNull 3 1 guarded usersTbl users_display_name refl)
+
+scanDropCheck : ScanClass
+scanDropCheck = scanOf 3 1 guarded (postDropCheck 3 1 guarded usersTbl users_display_name) (dropCheck 3 1 guarded usersTbl users_display_name refl)
+
+linkAtStart : Bool
+linkAtStart = link 3 1 base_1 (witness users_name) (witness users_display_name)
+
+linkAfterInstallSync : Bool
+linkAfterInstallSync = link 3 1 synced (witness users_name) (witness users_display_name)
+
+linkAfterInstallSyncBack : Bool
+linkAfterInstallSyncBack = link 3 1 synced (witness users_display_name) (witness users_name)
+
+linkAfterDropSync : Bool
+linkAfterDropSync = link 3 1 unsynced (witness users_name) (witness users_display_name)
+
+linkAfterBackfill : Bool
+linkAfterBackfill = link 3 1 copied (witness users_display_name) (witness users_name)
+
+linkAfterBackfillBack : Bool
+linkAfterBackfillBack = link 3 1 copied (witness users_name) (witness users_display_name)
+
+syncAfterBackfill : Bool
+syncAfterBackfill = sync 3 1 copied (witness users_display_name) (witness users_name)
+
+-- The laws L1, L4 and L6 on each step form (Q-S4-7 (a)). Each chain is one
+-- step, on the stage of the step term above. v0 is live at each stage, and
+-- `programCols` is all the program columns, in the code order. `accepts`
+-- (L1), `dropSafe` (L4) and `lockSafe` (L6) give true on each chain, and a
+-- `refl` proof shows it.
+liveV0 : ℕ → Live 3
+liveV0 i = pack 1 (λ (j : ℕ) → v0)
+
+programCols : Cols 3
+programCols = pack 3 (λ (j : ℕ) → flagIf (natEq j 0) users_name (flagIf (natEq j 1) users_id users_display_name))
+
+chainAddColumn : Chain 3 1 base_0 base_1
+chainAddColumn = snoc 3 1 base_0 base_0 base_1 (nil 3 1 base_0) (addColumn 3 1 base_0 usersTbl users_display_name text refl)
+
+acceptsAddColumn : Bool
+acceptsAddColumn = accepts 3 1 base_0 base_1 chainAddColumn liveV0 programCols
+
+acceptsAddColumnProof : Path Bool acceptsAddColumn true
+acceptsAddColumnProof = refl
+
+dropSafeAddColumn : Bool
+dropSafeAddColumn = dropSafe 3 1 base_0 base_1 chainAddColumn liveV0
+
+dropSafeAddColumnProof : Path Bool dropSafeAddColumn true
+dropSafeAddColumnProof = refl
+
+lockSafeAddColumn : Bool
+lockSafeAddColumn = lockSafe 3 1 base_0 base_1 chainAddColumn
+
+lockSafeAddColumnProof : Path Bool lockSafeAddColumn true
+lockSafeAddColumnProof = refl
+
+chainInstallSync : Chain 3 1 base_1 synced
+chainInstallSync = snoc 3 1 base_1 base_1 synced (nil 3 1 base_1) (installSync 3 1 base_1 usersTbl users_name users_display_name refl)
+
+acceptsInstallSync : Bool
+acceptsInstallSync = accepts 3 1 base_1 synced chainInstallSync liveV0 programCols
+
+acceptsInstallSyncProof : Path Bool acceptsInstallSync true
+acceptsInstallSyncProof = refl
+
+dropSafeInstallSync : Bool
+dropSafeInstallSync = dropSafe 3 1 base_1 synced chainInstallSync liveV0
+
+dropSafeInstallSyncProof : Path Bool dropSafeInstallSync true
+dropSafeInstallSyncProof = refl
+
+lockSafeInstallSync : Bool
+lockSafeInstallSync = lockSafe 3 1 base_1 synced chainInstallSync
+
+lockSafeInstallSyncProof : Path Bool lockSafeInstallSync true
+lockSafeInstallSyncProof = refl
+
+chainDropSync : Chain 3 1 synced unsynced
+chainDropSync = snoc 3 1 synced synced unsynced (nil 3 1 synced) (dropSync 3 1 synced usersTbl users_name users_display_name refl)
+
+acceptsDropSync : Bool
+acceptsDropSync = accepts 3 1 synced unsynced chainDropSync liveV0 programCols
+
+acceptsDropSyncProof : Path Bool acceptsDropSync true
+acceptsDropSyncProof = refl
+
+dropSafeDropSync : Bool
+dropSafeDropSync = dropSafe 3 1 synced unsynced chainDropSync liveV0
+
+dropSafeDropSyncProof : Path Bool dropSafeDropSync true
+dropSafeDropSyncProof = refl
+
+lockSafeDropSync : Bool
+lockSafeDropSync = lockSafe 3 1 synced unsynced chainDropSync
+
+lockSafeDropSyncProof : Path Bool lockSafeDropSync true
+lockSafeDropSyncProof = refl
+
+chainBackfill : Chain 3 1 base_1 copied
+chainBackfill = snoc 3 1 base_1 base_1 copied (nil 3 1 base_1) (backfill 3 1 base_1 usersTbl users_display_name users_name 1000 refl)
+
+acceptsBackfill : Bool
+acceptsBackfill = accepts 3 1 base_1 copied chainBackfill liveV0 programCols
+
+acceptsBackfillProof : Path Bool acceptsBackfill true
+acceptsBackfillProof = refl
+
+dropSafeBackfill : Bool
+dropSafeBackfill = dropSafe 3 1 base_1 copied chainBackfill liveV0
+
+dropSafeBackfillProof : Path Bool dropSafeBackfill true
+dropSafeBackfillProof = refl
+
+lockSafeBackfill : Bool
+lockSafeBackfill = lockSafe 3 1 base_1 copied chainBackfill
+
+lockSafeBackfillProof : Path Bool lockSafeBackfill true
+lockSafeBackfillProof = refl
+
+chainDeploy : Chain 3 1 base_1 base_1
+chainDeploy = snoc 3 1 base_1 base_1 base_1 (nil 3 1 base_1) (deploy 3 1 base_1 v0)
+
+acceptsDeploy : Bool
+acceptsDeploy = accepts 3 1 base_1 base_1 chainDeploy liveV0 programCols
+
+acceptsDeployProof : Path Bool acceptsDeploy true
+acceptsDeployProof = refl
+
+dropSafeDeploy : Bool
+dropSafeDeploy = dropSafe 3 1 base_1 base_1 chainDeploy liveV0
+
+dropSafeDeployProof : Path Bool dropSafeDeploy true
+dropSafeDeployProof = refl
+
+lockSafeDeploy : Bool
+lockSafeDeploy = lockSafe 3 1 base_1 base_1 chainDeploy
+
+lockSafeDeployProof : Path Bool lockSafeDeploy true
+lockSafeDeployProof = refl
+
+chainRetire : Chain 3 1 base_1 base_1
+chainRetire = snoc 3 1 base_1 base_1 base_1 (nil 3 1 base_1) (retire 3 1 base_1 v0)
+
+acceptsRetire : Bool
+acceptsRetire = accepts 3 1 base_1 base_1 chainRetire liveV0 programCols
+
+acceptsRetireProof : Path Bool acceptsRetire true
+acceptsRetireProof = refl
+
+dropSafeRetire : Bool
+dropSafeRetire = dropSafe 3 1 base_1 base_1 chainRetire liveV0
+
+dropSafeRetireProof : Path Bool dropSafeRetire true
+dropSafeRetireProof = refl
+
+lockSafeRetire : Bool
+lockSafeRetire = lockSafe 3 1 base_1 base_1 chainRetire
+
+lockSafeRetireProof : Path Bool lockSafeRetire true
+lockSafeRetireProof = refl
+
+chainDropColumn : Chain 3 1 base_1 (postDropColumn 3 1 base_1 usersTbl users_name)
+chainDropColumn = snoc 3 1 base_1 base_1 (postDropColumn 3 1 base_1 usersTbl users_name) (nil 3 1 base_1) (dropColumn 3 1 base_1 usersTbl users_name refl)
+
+acceptsDropColumn : Bool
+acceptsDropColumn = accepts 3 1 base_1 (postDropColumn 3 1 base_1 usersTbl users_name) chainDropColumn liveV0 programCols
+
+acceptsDropColumnProof : Path Bool acceptsDropColumn true
+acceptsDropColumnProof = refl
+
+dropSafeDropColumn : Bool
+dropSafeDropColumn = dropSafe 3 1 base_1 (postDropColumn 3 1 base_1 usersTbl users_name) chainDropColumn liveV0
+
+dropSafeDropColumnProof : Path Bool dropSafeDropColumn true
+dropSafeDropColumnProof = refl
+
+lockSafeDropColumn : Bool
+lockSafeDropColumn = lockSafe 3 1 base_1 (postDropColumn 3 1 base_1 usersTbl users_name) chainDropColumn
+
+lockSafeDropColumnProof : Path Bool lockSafeDropColumn true
+lockSafeDropColumnProof = refl
+
+chainAddNotNullCheck : Chain 3 1 base_1 guarded
+chainAddNotNullCheck = snoc 3 1 base_1 base_1 guarded (nil 3 1 base_1) (addNotNullCheck 3 1 base_1 usersTbl users_display_name refl)
+
+acceptsAddNotNullCheck : Bool
+acceptsAddNotNullCheck = accepts 3 1 base_1 guarded chainAddNotNullCheck liveV0 programCols
+
+acceptsAddNotNullCheckProof : Path Bool acceptsAddNotNullCheck true
+acceptsAddNotNullCheckProof = refl
+
+dropSafeAddNotNullCheck : Bool
+dropSafeAddNotNullCheck = dropSafe 3 1 base_1 guarded chainAddNotNullCheck liveV0
+
+dropSafeAddNotNullCheckProof : Path Bool dropSafeAddNotNullCheck true
+dropSafeAddNotNullCheckProof = refl
+
+lockSafeAddNotNullCheck : Bool
+lockSafeAddNotNullCheck = lockSafe 3 1 base_1 guarded chainAddNotNullCheck
+
+lockSafeAddNotNullCheckProof : Path Bool lockSafeAddNotNullCheck true
+lockSafeAddNotNullCheckProof = refl
+
+chainValidate : Chain 3 1 guarded checked
+chainValidate = snoc 3 1 guarded guarded checked (nil 3 1 guarded) (validate 3 1 guarded usersTbl users_display_name refl)
+
+acceptsValidate : Bool
+acceptsValidate = accepts 3 1 guarded checked chainValidate liveV0 programCols
+
+acceptsValidateProof : Path Bool acceptsValidate true
+acceptsValidateProof = refl
+
+dropSafeValidate : Bool
+dropSafeValidate = dropSafe 3 1 guarded checked chainValidate liveV0
+
+dropSafeValidateProof : Path Bool dropSafeValidate true
+dropSafeValidateProof = refl
+
+lockSafeValidate : Bool
+lockSafeValidate = lockSafe 3 1 guarded checked chainValidate
+
+lockSafeValidateProof : Path Bool lockSafeValidate true
+lockSafeValidateProof = refl
+
+chainSetNotNull : Chain 3 1 checked (postSetNotNull 3 1 checked usersTbl users_display_name)
+chainSetNotNull = snoc 3 1 checked checked (postSetNotNull 3 1 checked usersTbl users_display_name) (nil 3 1 checked) (setNotNull 3 1 checked usersTbl users_display_name refl)
+
+acceptsSetNotNull : Bool
+acceptsSetNotNull = accepts 3 1 checked (postSetNotNull 3 1 checked usersTbl users_display_name) chainSetNotNull liveV0 programCols
+
+acceptsSetNotNullProof : Path Bool acceptsSetNotNull true
+acceptsSetNotNullProof = refl
+
+dropSafeSetNotNull : Bool
+dropSafeSetNotNull = dropSafe 3 1 checked (postSetNotNull 3 1 checked usersTbl users_display_name) chainSetNotNull liveV0
+
+dropSafeSetNotNullProof : Path Bool dropSafeSetNotNull true
+dropSafeSetNotNullProof = refl
+
+lockSafeSetNotNull : Bool
+lockSafeSetNotNull = lockSafe 3 1 checked (postSetNotNull 3 1 checked usersTbl users_display_name) chainSetNotNull
+
+lockSafeSetNotNullProof : Path Bool lockSafeSetNotNull true
+lockSafeSetNotNullProof = refl
+
+chainDropCheck : Chain 3 1 guarded (postDropCheck 3 1 guarded usersTbl users_display_name)
+chainDropCheck = snoc 3 1 guarded guarded (postDropCheck 3 1 guarded usersTbl users_display_name) (nil 3 1 guarded) (dropCheck 3 1 guarded usersTbl users_display_name refl)
+
+acceptsDropCheck : Bool
+acceptsDropCheck = accepts 3 1 guarded (postDropCheck 3 1 guarded usersTbl users_display_name) chainDropCheck liveV0 programCols
+
+acceptsDropCheckProof : Path Bool acceptsDropCheck true
+acceptsDropCheckProof = refl
+
+dropSafeDropCheck : Bool
+dropSafeDropCheck = dropSafe 3 1 guarded (postDropCheck 3 1 guarded usersTbl users_display_name) chainDropCheck liveV0
+
+dropSafeDropCheckProof : Path Bool dropSafeDropCheck true
+dropSafeDropCheckProof = refl
+
+lockSafeDropCheck : Bool
+lockSafeDropCheck = lockSafe 3 1 guarded (postDropCheck 3 1 guarded usersTbl users_display_name) chainDropCheck
+
+lockSafeDropCheckProof : Path Bool lockSafeDropCheck true
+lockSafeDropCheckProof = refl
+
+-- A negative case: setNotNull at base_1 has no valid CHECK, so it scans
+-- under ACCESS EXCLUSIVE, and `lockSafe` gives false.
+chainSetNotNullNoCheck : Chain 3 1 base_1 (postSetNotNull 3 1 base_1 usersTbl users_display_name)
+chainSetNotNullNoCheck = snoc 3 1 base_1 base_1 (postSetNotNull 3 1 base_1 usersTbl users_display_name) (nil 3 1 base_1) (setNotNull 3 1 base_1 usersTbl users_display_name refl)
+
+lockSafeSetNotNullNoCheck : Bool
+lockSafeSetNotNullNoCheck = lockSafe 3 1 base_1 (postSetNotNull 3 1 base_1 usersTbl users_display_name) chainSetNotNullNoCheck

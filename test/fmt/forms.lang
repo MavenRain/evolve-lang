@@ -4,7 +4,7 @@ table  users ( name : text ,  id : bigint  key )
 
 app v0 ( )
 
-app  v1 (reads users.name,reads users.id,  writes users.name, inserts  users.id)
+app  v1 (reads users.display_name,reads users.id,  writes users.display_name, inserts  users.id, inserts users.display_name)
 
 protocol  rename where
     addColumn users  display_name text
@@ -17,4 +17,4 @@ protocol  rename where
     dropCheck users  display_name
     dropSync users name  display_name
     retire v0
-    dropColumn users display_name
+    dropColumn users name

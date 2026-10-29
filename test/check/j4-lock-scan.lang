@@ -1,0 +1,6 @@
+-- J5: setNotNull after a CHECK that is not valid yet.
+table users (name : text, id : bigint key)
+
+protocol p where
+  addNotNullCheck users name
+  setNotNull users name
