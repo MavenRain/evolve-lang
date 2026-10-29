@@ -199,7 +199,7 @@ same_dump() {
     cmp -s "$tmp/d1.txt" "$tmp/d2.txt"
 }
 canon=0
-for f in domain/domain.lang examples/*.lang test/check/*.lang test/eval/*.lang test/ir/*.lang test/json/*.lang test/fmt/*.canon; do
+for f in domain/domain.lang examples/*.lang test/check/*.lang test/eval/*.lang test/ir/*.lang test/json/*.lang test/report/*.lang test/fmt/*.canon; do
   case "$f" in
     test/json/LEX_*.lang | test/json/PARSE_*.lang | test/json/W_NONCANON.lang) continue ;;
   esac
@@ -297,6 +297,29 @@ for f in $(printf '%s\n' test/json/*.lang | rg '^test/json/[A-Z_]+\.lang$'); do
   rg -q -x -F "$(basename "$f" .lang)" "$tmp/doc-codes.txt" || { echo "FAIL $f: the code is not in docs/DIAGNOSTICS.md"; fail=$((fail + 1)); }
 done
 echo "json: $jsons fixtures; diagnostics: $codes codes, $fixtures with a fixture, $reasons with no fixture"
+
+# Golden reports (Q-S5-7 (a)). test/report/NAME.json is the `langc report`
+# document of the protocol NAME in test/report/NAME.lang, or in
+# examples/NAME.lang when there is no test/report/NAME.lang (rename.json reads
+# examples/rename.lang). Each run exits 0 with no stderr, and the document
+# equals NAME.json byte for byte.
+reports=0
+for want in $(printf '%s\n' test/report/*.json | LC_ALL=C sort); do
+  reports=$((reports + 1))
+  name=$(basename "$want" .json)
+  prog="test/report/$name.lang"
+  [ -f "$prog" ] || prog="examples/$name.lang"
+  status=0
+  build/langc report "$prog" "$name" >"$tmp/r.out" 2>"$tmp/r.err" || status=$?
+  if [ "$status" -ne 0 ] || [ -s "$tmp/r.err" ]; then
+    echo "FAIL report $name: exit $status $(head -n 1 "$tmp/r.err" | cut -c1-120)"
+    fail=$((fail + 1))
+  elif ! cmp -s "$want" "$tmp/r.out"; then
+    echo "FAIL report $name: the document is not $want: $(cmp "$want" "$tmp/r.out" 2>&1 | cut -c1-120)"
+    fail=$((fail + 1))
+  fi
+done
+echo "report: $reports golden reports"
 
 rm -rf "$tmp"
 

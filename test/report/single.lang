@@ -1,0 +1,9 @@
+-- A golden report (S5 U3): a protocol with one step. There are two stages
+-- and one segment. v1 does not use the new column, so v1 is compatible at
+-- the two stages.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.id, reads users.name, inserts users.id, inserts users.name)
+
+protocol single where
+  addColumn users note text

@@ -39,7 +39,8 @@ found nothing to port (S1 HANDOFF). docs/STATUS.md records the read.
   error, m is 0.
 - `parsed`: the declarations that parse. `typed`: the declarations that
   type-check before the first check error (all m when the program is ok).
-- `affine` and `laws` stay `"0 of 0"` until S3 and S4.
+- `affine` and `laws` are always `"0 of 0"`: the checker does not count
+  them. The `progress` key of `langc report` is this object (Q-S5-6 (a)).
 
 ## Codes
 

@@ -1,0 +1,19 @@
+-- A golden report (S5 U3): a new not-null column. v2 inserts users.handle and
+-- v1 does not. After the CHECK, v1 is REFUSE_NULL_INSERT, so v1 is retired
+-- before the CHECK. validate takes the lock shareUpdateExclusive and the
+-- scan class scan.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.id, reads users.name, inserts users.id, inserts users.name)
+
+app v2 (reads users.id, reads users.name, inserts users.id, inserts users.name, inserts users.handle)
+
+protocol strict where
+  addColumn users handle text
+  deploy v2
+  retire v1
+  backfill users handle ← name batch 500
+  addNotNullCheck users handle
+  validate users handle
+  setNotNull users handle
+  dropCheck users handle

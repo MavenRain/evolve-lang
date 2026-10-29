@@ -8,12 +8,16 @@
 #include "front/front.h"
 #include "front/lower.h"
 #include "front/parser.h"
+#include "json.h"
 #include "target.h"
 
 #define ARENA_LIMIT_BYTES ((size_t)1 << 30)
+/* The progress object: the fixed text and four size_t numbers. */
+#define PROGRESS_MAX_BYTES 256u
 
 typedef enum {
   CMD_CHECK,
+  CMD_REPORT,
   CMD_EVAL,
   CMD_IR,
   CMD_ABI,
@@ -25,6 +29,7 @@ typedef struct {
   Command command;
   const char *prog_path;
   const char *entry;
+  const char *protocol;
   char **args;
   int arg_count;
   const char *out_path;
@@ -37,6 +42,7 @@ static const struct {
   Command command;
 } COMMANDS[] = {
   {"check", CMD_CHECK},
+  {"report", CMD_REPORT},
   {"eval", CMD_EVAL},
   {"ir", CMD_IR},
   {"abi", CMD_ABI},
@@ -46,6 +52,7 @@ static const struct {
 
 static int usage(FILE *err) {
   fputs("usage: langc check [--json] PROG\n"
+        "       langc report PROG PROTOCOL\n"
         "       langc eval PROG NAME [ARGS...]\n"
         "       langc ir PROG\n"
         "       langc abi PROG\n"
@@ -90,6 +97,10 @@ static int parse_options(int argc, char **argv, Options *opt, Diag *diag) {
     case CMD_FMT:
       if (opt->json && argc == 3) return diag_fail(diag, "USAGE", NULL, "check --json needs a program path");
       return argc == 3 + opt->json ? 1 : diag_fail(diag, "USAGE", NULL, "too many arguments");
+    case CMD_REPORT:
+      if (argc != 4) return diag_fail(diag, "USAGE", NULL, "report needs a program path and a protocol name");
+      opt->protocol = argv[3];
+      return 1;
     case CMD_EVAL:
       if (argc < 4) return diag_fail(diag, "USAGE", NULL, "eval needs a definition name");
       opt->entry = argv[3];
@@ -132,6 +143,7 @@ static int run_target(const Options *opt, Machine *machine, Diag *diag) {
       for (i = 0; i < prog.func_count && ok; i++) ok = target_abi_line(&prog.funcs[i], stdout, stderr);
       return ok ? 0 : 1;
     case CMD_CHECK:
+    case CMD_REPORT:
     case CMD_EVAL:
     case CMD_BUILD:
     case CMD_FMT:
@@ -155,6 +167,7 @@ static int run(const Options *opt, Arena *arena, Diag *diag) {
     case CMD_EVAL:
       return eval_command(&machine, opt->entry, opt->args, opt->arg_count, stdout, stderr);
     case CMD_CHECK: /* run_check does check */
+    case CMD_REPORT: /* run_report does report */
     case CMD_IR:
     case CMD_ABI:
     case CMD_BUILD:
@@ -241,47 +254,109 @@ static void noncanon(Arena *arena, const char *path, const char *text, size_t le
   }
 }
 
-/* The last line of `check --json`. The count is the number of program
-   declarations: after a parse failure, the complete ones and the failed
-   one; after a lex failure, 0. */
-static void print_progress(const Front *front, const Machine *machine, int parsed, int typed, FILE *out) {
+/* The progress object of `check --json` and `report`, without the newline.
+   The count is the number of program declarations: after a parse failure,
+   the complete ones and the failed one; after a lex failure, 0. */
+static void progress_text(const Front *front, const Machine *machine, int parsed, int typed, char *buf, size_t size) {
   size_t done = front->lexed ? front->decls.count - front->domain_count : 0;
   size_t count = done + (size_t)(front->lexed && !parsed);
   size_t checked = machine->checked > front->domain_count ? machine->checked - front->domain_count : 0;
   size_t ok = typed ? count : parsed ? checked : 0;
-  fprintf(out, "{\"parsed\":\"%zu of %zu\",\"typed\":\"%zu of %zu\",\"affine\":\"0 of 0\",\"laws\":\"0 of 0\"}\n",
-          done, count, ok, count);
+  snprintf(buf, size, "{\"parsed\":\"%zu of %zu\",\"typed\":\"%zu of %zu\",\"affine\":\"0 of 0\",\"laws\":\"0 of 0\"}",
+           done, count, ok, count);
+}
+
+/* The last line of `check --json`. */
+static void print_progress(const Front *front, const Machine *machine, int parsed, int typed, FILE *out) {
+  char buf[PROGRESS_MAX_BYTES];
+  progress_text(front, machine, parsed, typed, buf, sizeof buf);
+  fprintf(out, "%s\n", buf);
+}
+
+/* A program after check_source. */
+typedef struct {
+  char *text;
+  size_t len;
+  Front front;
+  Machine machine;
+  Diag warn;
+  int loaded;
+  int parsed;
+  int typed;
+} Checked;
+
+/* The steps of `check` and `report`: read, load and check the program (when
+   REPORT is not NULL, also fill REPORT), then find the W_NONCANON warning
+   (at most one) into OUT->warn. The error goes to DIAG. */
+static void check_source(const Options *opt, Arena *arena, Diag *diag, Report *report, Checked *out) {
+  memset(out, 0, sizeof *out);
+  diag_init(&out->warn);
+  out->loaded = read_source(arena, opt->prog_path, &out->text, &out->len, diag);
+  out->parsed = out->loaded && front_load(arena, opt->prog_path, out->text, out->len, &out->front, diag);
+  out->typed = out->parsed && check_program_report(arena, &out->front.decls, &out->machine, diag, report);
+  if (out->parsed && !out->typed && out->machine.decl_failed) {
+    diag_default_span(diag, decl_span(opt->prog_path, &out->front.decls.items[out->machine.checked]));
+  }
+  if (out->parsed) noncanon(arena, opt->prog_path, out->text, out->len, &out->front, &out->warn);
+}
+
+/* The lines of `check --json`: the error, the warning, the progress line. */
+static void print_check_json(const Diag *diag, const Checked *c) {
+  if (diag->set) diag_print_json(diag, stdout);
+  if (c->warn.set) diag_print_json(&c->warn, stdout);
+  print_progress(&c->front, &c->machine, c->parsed, c->typed, stdout);
 }
 
 /* `check` in both modes: the error (at most one), then the W_NONCANON
    warning (at most one), then `ok` (text) or the progress line (JSON). A
    warning does not change the exit code. */
 static int run_check(const Options *opt, Arena *arena, Diag *diag) {
-  char *text = NULL;
-  size_t len = 0;
-  Front front;
-  Machine machine;
-  Diag warn;
-  memset(&front, 0, sizeof front);
-  memset(&machine, 0, sizeof machine);
-  diag_init(&warn);
-  int loaded = read_source(arena, opt->prog_path, &text, &len, diag);
-  int parsed = loaded && front_load(arena, opt->prog_path, text, len, &front, diag);
-  int typed = parsed && check_program(arena, &front.decls, &machine, diag);
-  if (parsed && !typed && machine.decl_failed) {
-    diag_default_span(diag, decl_span(opt->prog_path, &front.decls.items[machine.checked]));
-  }
-  if (parsed) noncanon(arena, opt->prog_path, text, len, &front, &warn);
+  Checked c;
+  check_source(opt, arena, diag, NULL, &c);
   if (opt->json) {
-    if (diag->set) diag_print_json(diag, stdout);
-    if (warn.set) diag_print_json(&warn, stdout);
-    print_progress(&front, &machine, parsed, typed, stdout);
+    print_check_json(diag, &c);
   } else {
     if (diag->set) diag_print(diag, stderr);
-    if (warn.set) diag_print(&warn, stderr);
-    if (typed) puts("ok");
+    if (c.warn.set) diag_print(&c.warn, stderr);
+    if (c.typed) puts("ok");
   }
-  return typed ? 0 : loaded ? 1 : 2;
+  return c.typed ? 0 : c.loaded ? 1 : 2;
+}
+
+/* `report`: one JSON document for the protocol OPT->protocol on stdout. A
+   program that is not checked gives the `check --json` lines (exit 1, or 2
+   when it cannot be read). A program with no such protocol is a usage error
+   (exit 2). The W_NONCANON warning goes to stderr as text, so stdout stays
+   one document. */
+static int run_report(const Options *opt, Arena *arena, Diag *diag) {
+  Report report;
+  memset(&report, 0, sizeof report);
+  report.protocol = opt->protocol;
+  Checked c;
+  check_source(opt, arena, diag, &report, &c);
+  if (!c.typed) {
+    print_check_json(diag, &c);
+    return c.loaded ? 1 : 2;
+  }
+  int found = report.found || diag_fail(diag, "USAGE", NULL, "%s has no protocol %s", opt->prog_path, opt->protocol);
+  if (diag->set) diag_print(diag, stderr);
+  if (c.warn.set) diag_print(&c.warn, stderr);
+  if (!found) return 2;
+  char progress[PROGRESS_MAX_BYTES];
+  progress_text(&c.front, &c.machine, c.parsed, c.typed, progress, sizeof progress);
+  JsonOut out;
+  json_out_init(&out, arena, diag, NULL);
+  if (!json_report(&out, &report, progress)) {
+    diag_print(diag, stderr);
+    return 2;
+  }
+  size_t written = fwrite(out.data, 1, out.len, stdout);
+  if (written != out.len || fflush(stdout) != 0) {
+    diag_fail(diag, "IO", NULL, "cannot write the report");
+    diag_print(diag, stderr);
+    return 2;
+  }
+  return 0;
 }
 
 /* Lexes and parses the program only (no domain, no check), then prints the
@@ -314,11 +389,12 @@ int main(int argc, char **argv) {
   }
   Arena arena;
   arena_init(&arena, ARENA_LIMIT_BYTES);
-  int status = opt.command == CMD_FMT     ? run_fmt(&opt, &arena, &diag)
-               : opt.command == CMD_CHECK ? run_check(&opt, &arena, &diag)
-                                          : run(&opt, &arena, &diag);
+  int status = opt.command == CMD_FMT      ? run_fmt(&opt, &arena, &diag)
+               : opt.command == CMD_CHECK  ? run_check(&opt, &arena, &diag)
+               : opt.command == CMD_REPORT ? run_report(&opt, &arena, &diag)
+                                           : run(&opt, &arena, &diag);
   arena_release(&arena);
-  /* run_check prints its own diagnostics. */
-  if (status != 0 && diag.set && opt.command != CMD_CHECK) diag_print(&diag, stderr);
+  /* run_check and run_report print their own diagnostics. */
+  if (status != 0 && diag.set && opt.command != CMD_CHECK && opt.command != CMD_REPORT) diag_print(&diag, stderr);
   return status;
 }

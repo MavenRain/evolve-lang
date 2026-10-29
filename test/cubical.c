@@ -1,6 +1,8 @@
-/* Check face restrictions, binder scope and normalized source round trips. */
+/* Check face restrictions, binder scope and normalized source round trips,
+   and the string escaping of the JSON writer. */
 #include "front/check.h"
 #include "front/front.h"
+#include "json.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -56,7 +58,168 @@ done:
   return ok;
 }
 
+/* json_put_string gives the WANT bytes for TEXT. The `check --json` writer
+   uses the same json_escape rule; the test/json goldens pin its bytes. */
+static int escape_case(const char *label, const char *text, const char *want) {
+  Arena arena;
+  Diag diag;
+  JsonOut out;
+  arena_init(&arena, (size_t)1 << 20);
+  diag_init(&diag);
+  json_out_init(&out, &arena, &diag, "json-regression");
+  int ok = json_put_string(&out, text) && strcmp(out.data, want) == 0;
+  if (!ok) {
+    fprintf(stderr, "FAIL json escape %s: wanted %s, got %s\n", label, want,
+            out.data == NULL ? "no text" : out.data);
+    if (diag.set) diag_print(&diag, stderr);
+  }
+  arena_release(&arena);
+  return ok;
+}
+
+/* The stage guards must cover every runtime dependency, including a writer
+   whose retirement protects another app and a backfill at an unrelated
+   barrier. The matrix may still expose just its first runtime fact. */
+static int report_case(const char *label, const char *source, size_t stage,
+                       const char *const *facts, size_t count) {
+  Arena arena;
+  Diag diag;
+  Machine machine;
+  Front front;
+  Report report;
+  memset(&report, 0, sizeof report);
+  report.protocol = "probe";
+  arena_init(&arena, (size_t)1 << 28);
+  diag_init(&diag);
+  int checked = front_load(&arena, "report-regression", source, strlen(source), &front, &diag)
+             && check_program_report(&arena, &front.decls, &machine, &diag, &report);
+  int ok = checked && report.found && stage < report.stage_count
+        && report.stages[stage].guard_count == count;
+  for (size_t i = 0; ok && i < count; i++)
+    ok = strcmp(report.stages[stage].guards[i].fact, facts[i]) == 0;
+  if (!ok) {
+    fprintf(stderr, "FAIL report guard %s: stage %zu wanted", label, stage);
+    for (size_t i = 0; i < count; i++) fprintf(stderr, " [%s]", facts[i]);
+    fputs(", got", stderr);
+    if (checked && report.found && stage < report.stage_count)
+      for (size_t i = 0; i < report.stages[stage].guard_count; i++)
+        fprintf(stderr, " [%s]", report.stages[stage].guards[i].fact);
+    fputc('\n', stderr);
+    if (diag.set) diag_print(&diag, stderr);
+  }
+  arena_release(&arena);
+  return ok;
+}
+
+/* A text of 9000 bytes after a key: the buffer doubles from 4096 two times
+   and keeps the bytes that it had. */
+static int grow_case(void) {
+  static char text[9001];
+  static char want[9011];
+  Arena arena;
+  Diag diag;
+  JsonOut out;
+  memset(text, 'a', 9000);
+  memcpy(want, "{\"k\":\"", 6);
+  memset(want + 6, 'a', 9000);
+  memcpy(want + 9006, "\"}", 3);
+  arena_init(&arena, (size_t)1 << 20);
+  diag_init(&diag);
+  json_out_init(&out, &arena, &diag, "json-regression");
+  int ok = json_put_text(&out, "{\"k\":") && json_put_string(&out, text) && json_put(&out, "}", 1)
+        && out.len == 9008 && out.cap == 16384 && strcmp(out.data, want) == 0;
+  if (!ok) {
+    fprintf(stderr, "FAIL json escape grow: wanted %d bytes, got %zu\n", 9008, out.len);
+    if (diag.set) diag_print(&diag, stderr);
+  }
+  arena_release(&arena);
+  return ok;
+}
+
 int main(void) {
+  static const char *const multiple_facts[] = {
+    "fleetAt 4", "backfillDone users first", "backfillDone users second"
+  };
+  static const char *const writer_facts[] = {"retired old"};
+  static const char *const history_facts[] = {"retired reader"};
+  static const char *const barrier_facts[] = {"fleetAt 2", "backfillDone users full"};
+  static const struct {
+    const char *label;
+    const char *source;
+    size_t stage;
+    const char *const *facts;
+    size_t count;
+  } reports[] = {
+    {"two backfilled reads",
+     "table users (id : bigint key, name : text, nick : text)\n"
+     "app v1 (reads users.name, reads users.nick)\n"
+     "app v2 (reads users.first, reads users.second, reads users.first)\n"
+     "protocol probe where\n"
+     "  addColumn users first text\n"
+     "  addColumn users second text\n"
+     "  backfill users first ← name batch 500\n"
+     "  backfill users second ← nick batch 500\n"
+     "  deploy v2\n", 5, multiple_facts, 3},
+    {"retired writer protects a live reader",
+     "table users (id : bigint key, name : text)\n"
+     "app old (writes users.name)\n"
+     "app new (reads users.full)\n"
+     "protocol probe where\n"
+     "  addColumn users full text\n"
+     "  installSync users name full\n"
+     "  backfill users full ← name batch 500\n"
+     "  deploy new\n"
+     "  retire old\n"
+     "  dropSync users name full\n", 6, writer_facts, 1},
+    {"first barrier has no backfilled reader",
+     "table users (id : bigint key, name : text)\n"
+     "app v1 (reads users.name)\n"
+     "app v2 (reads users.name)\n"
+     "app v3 (reads users.full)\n"
+     "protocol probe where\n"
+     "  addColumn users full text\n"
+     "  backfill users full ← name batch 500\n"
+     "  deploy v2\n"
+     "  retire v1\n"
+     "  deploy v3\n", 3, barrier_facts, 2},
+    {"two retired apps still need a retirement guard",
+     "table users (id : bigint key, name : text)\n"
+     "app reader (reads users.full)\n"
+     "app writer (writes users.name)\n"
+     "app current (reads users.id)\n"
+     "protocol probe where\n"
+     "  addColumn users full text\n"
+     "  installSync users name full\n"
+     "  backfill users full ← name batch 500\n"
+     "  deploy reader\n"
+     "  retire reader\n"
+     "  deploy current\n"
+     "  retire writer\n"
+     "  dropSync users name full\n", 8, history_facts, 1}
+  };
+  /* Hex escapes end at a string break: "\xe2\x86\x90" "b" is four bytes. */
+  static const struct { const char *label; const char *text; const char *want; } escapes[] = {
+    {"plain ASCII", "renameName v2", "\"renameName v2\""},
+    {"empty", "", "\"\""},
+    {"null", NULL, "null"},
+    {"quote", "a\"b", "\"a\\\"b\""},
+    {"backslash", "a\\b", "\"a\\\\b\""},
+    {"control 0x01", "\x01", "\"\\u0001\""},
+    {"newline, no short escape", "a\nb", "\"a\\u000ab\""},
+    {"tab, no short escape", "\t", "\"\\u0009\""},
+    {"control 0x1f", "\x1f", "\"\\u001f\""},
+    {"space, tilde and 0x7f raw", " ~\x7f", "\" ~\x7f\""},
+    {"two-byte UTF-8 raw", "\xc3\xbf", "\"\xc3\xbf\""},
+    {"arrow UTF-8 raw", "a \xe2\x86\x90" " b", "\"a \xe2\x86\x90" " b\""},
+    {"four-byte UTF-8 raw", "\xf0\x9f\x98\x80", "\"\xf0\x9f\x98\x80\""},
+    {"invalid byte 0xff", "\xff", "\"\\u00ff\""},
+    {"lone continuation byte", "\x86" "x", "\"\\u0086x\""},
+    {"truncated sequence at the end", "\xe2\x86", "\"\\u00e2\\u0086\""},
+    {"truncated sequence before ASCII", "\xe2\x86" "x", "\"\\u00e2\\u0086x\""},
+    {"overlong form", "\xc0\xaf", "\"\\u00c0\\u00af\""},
+    {"surrogate", "\xed\xa0\x80", "\"\\u00ed\\u00a0\\u0080\""},
+    {"above U+10FFFF", "\xf4\x90\x80\x80", "\"\\u00f4\\u0090\\u0080\\u0080\""}
+  };
   static const struct { const char *label; const char *source; const char *code; } checks[] = {
     {"live app named j",
      "table users (id : bigint key, name : text)\n"
@@ -226,7 +389,16 @@ int main(void) {
     ok &= check_case(checks[i].label, checks[i].source, checks[i].code);
   for (i = 0; i < sizeof rounds / sizeof rounds[0]; i++)
     ok &= round_trip(rounds[i].label, rounds[i].signature, rounds[i].body);
+  int json_ok = grow_case();
+  for (i = 0; i < sizeof escapes / sizeof escapes[0]; i++)
+    json_ok &= escape_case(escapes[i].label, escapes[i].text, escapes[i].want);
+  int report_ok = 1;
+  for (i = 0; i < sizeof reports / sizeof reports[0]; i++)
+    report_ok &= report_case(reports[i].label, reports[i].source, reports[i].stage,
+                             reports[i].facts, reports[i].count);
   if (ok) printf("cubical regressions: %zu checks, %zu round trips passed\n",
                  sizeof checks / sizeof checks[0], sizeof rounds / sizeof rounds[0]);
-  return ok ? 0 : 1;
+  if (json_ok) printf("json writer regressions: %zu cases passed\n", sizeof escapes / sizeof escapes[0] + 1u);
+  if (report_ok) printf("report guard regressions: %zu cases passed\n", sizeof reports / sizeof reports[0]);
+  return ok && json_ok && report_ok ? 0 : 1;
 }

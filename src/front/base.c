@@ -128,29 +128,37 @@ static size_t json_utf8_width(const unsigned char *s) {
   return width;
 }
 
-/* NULL prints as null. Control and invalid UTF-8 bytes print as \u00xx. */
+size_t json_escape(const char *text, char *esc, size_t *esc_len) {
+  const unsigned char *s = (const unsigned char *)text;
+  size_t width = *s >= 0x80 ? json_utf8_width(s) : 1;
+  int quote = *s == '"' || *s == '\\';
+  if (width > 0 && !quote && *s >= 0x20) {
+    memcpy(esc, s, width);
+    *esc_len = width;
+    return width;
+  }
+  if (quote) {
+    esc[0] = '\\';
+    esc[1] = (char)*s;
+    *esc_len = 2;
+    return 1;
+  }
+  *esc_len = (size_t)snprintf(esc, JSON_ESCAPE_MAX, "\\u%04x", (unsigned)*s);
+  return 1;
+}
+
+/* NULL prints as null. Each byte or UTF-8 scalar prints as json_escape gives it. */
 static void json_string(FILE *out, const char *text) {
   if (text == NULL) {
     fputs("null", out);
     return;
   }
   fputc('"', out);
-  for (const unsigned char *s = (const unsigned char *)text; *s != '\0'; s++) {
-    if (*s >= 0x80) {
-      size_t width = json_utf8_width(s);
-      if (width == 0) {
-        fprintf(out, "\\u%04x", (unsigned)*s);
-      } else {
-        fwrite(s, 1, width, out);
-        s += width - 1;
-      }
-      continue;
-    }
-    int quote = *s == '"' || *s == '\\';
-    int control = *s < 0x20;
-    if (quote) fprintf(out, "\\%c", *s);
-    if (control) fprintf(out, "\\u%04x", (unsigned)*s);
-    if (!quote && !control) fputc(*s, out);
+  for (const char *s = text; *s != '\0';) {
+    char esc[JSON_ESCAPE_MAX];
+    size_t len;
+    s += json_escape(s, esc, &len);
+    fwrite(esc, 1, len, out);
   }
   fputc('"', out);
 }

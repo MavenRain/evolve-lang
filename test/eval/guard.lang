@@ -1,0 +1,118 @@
+-- The runtime obligations (S5 U0): Guard values, guardBind and guardSize,
+-- and stageGuard on a small rename protocol. v1 reads users.name, v2 and
+-- v3 read users.full.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.id, reads users.name, writes users.name, inserts users.id, inserts users.name)
+
+app v2 (reads users.id, reads users.full, writes users.full, inserts users.id, inserts users.full)
+
+app v3 (reads users.full)
+
+protocol widen where
+  addColumn users full text
+  installSync users name full
+  backfill users full ← name batch 10
+  deploy v2
+  retire v1
+  deploy v3
+  dropSync users name full
+  dropColumn users name
+
+-- A closed Guard value, and guardBind with a continuation that adds a node.
+twoNeeds : Guard 3 1 ℕ
+twoNeeds = need 3 1 ℕ (fleetAt 3 1 3) (need 3 1 ℕ (retired 3 1 0) (done 3 1 ℕ 7))
+
+doneSize : ℕ
+doneSize = guardSize 3 1 ℕ (done 3 1 ℕ 7)
+
+twoSize : ℕ
+twoSize = guardSize 3 1 ℕ twoNeeds
+
+bound : Guard 3 1 ℕ
+bound = guardBind 3 1 ℕ ℕ twoNeeds (λ (x : ℕ) → need 3 1 ℕ (backfillDone 3 1 users users_full) (done 3 1 ℕ (natAdd x 1)))
+
+boundSize : ℕ
+boundSize = guardSize 3 1 ℕ bound
+
+-- The monad laws on closed values: the kernel decides them by refl.
+leftUnit : Path (Guard 3 1 ℕ) (guardBind 3 1 ℕ ℕ (done 3 1 ℕ 7) (λ (x : ℕ) → done 3 1 ℕ (natAdd x 1))) (done 3 1 ℕ 8)
+leftUnit = refl
+
+rightUnit : Path (Guard 3 1 ℕ) (guardBind 3 1 ℕ ℕ twoNeeds (λ (x : ℕ) → done 3 1 ℕ x)) twoNeeds
+rightUnit = refl
+
+assoc : Path (Guard 3 1 ℕ) (guardBind 3 1 ℕ ℕ (guardBind 3 1 ℕ ℕ twoNeeds (λ (x : ℕ) → need 3 1 ℕ (fleetAt 3 1 x) (done 3 1 ℕ x))) (λ (y : ℕ) → done 3 1 ℕ (natAdd y 1))) (guardBind 3 1 ℕ ℕ twoNeeds (λ (x : ℕ) → guardBind 3 1 ℕ ℕ (need 3 1 ℕ (fleetAt 3 1 x) (done 3 1 ℕ x)) (λ (y : ℕ) → done 3 1 ℕ (natAdd y 1))))
+assoc = refl
+
+-- The chain prefixes of widen up to stage 5.
+upTo1 : Chain 3 1 widen_0 widen_1
+upTo1 = snoc 3 1 widen_0 widen_0 widen_1 (nil 3 1 widen_0) (addColumn 3 1 widen_0 (pack 0 refl) users_full text refl)
+
+upTo2 : Chain 3 1 widen_0 widen_2
+upTo2 = snoc 3 1 widen_0 widen_1 widen_2 upTo1 (installSync 3 1 widen_1 (pack 0 refl) users_name users_full refl)
+
+upTo3 : Chain 3 1 widen_0 widen_3
+upTo3 = snoc 3 1 widen_0 widen_2 widen_3 upTo2 (backfill 3 1 widen_2 (pack 0 refl) users_full users_name 10 refl)
+
+upTo4 : Chain 3 1 widen_0 widen_4
+upTo4 = snoc 3 1 widen_0 widen_3 widen_4 upTo3 (deploy 3 1 widen_3 v2)
+
+upTo5 : Chain 3 1 widen_0 widen_5
+upTo5 = snoc 3 1 widen_0 widen_4 widen_5 upTo4 (retire 3 1 widen_4 v1)
+
+-- The apps in app order (codes 0, 1, 2), the live flags of widen and the
+-- program columns.
+apps : Live 3
+apps = pack 3 (λ (j : ℕ) → flagIf (natEq j 0) v1 (flagIf (natEq j 1) v2 v3))
+
+liveAt : ℕ → ℕ → Bool
+liveAt i j = flagIf (natEq j 0) (natLe i 4) (flagIf (natEq j 1) (natLe 4 i) (natLe 6 i))
+
+cols : Cols 3
+cols = pack 3 (λ (j : ℕ) → flagIf (natEq j 0) users_id (flagIf (natEq j 1) users_name users_full))
+
+-- Stage 0: no obligation.
+atStart : Guard 3 1 Unit
+atStart = stageGuard 3 1 widen_0 widen_0 (nil 3 1 widen_0) (pack 1 (λ (j : ℕ) → v1)) apps liveAt cols
+
+-- Stage 3, the backfill: v1 reads users.name, so no obligation.
+atFill : Guard 3 1 Unit
+atFill = stageGuard 3 1 widen_0 widen_3 upTo3 (pack 1 (λ (j : ℕ) → v1)) apps liveAt cols
+
+-- Stage 4, deploy v2: the barrier gives fleetAt 3, and v2 reads users.full
+-- before the fleet passes the barrier.
+atDeploy : Guard 3 1 Unit
+atDeploy = stageGuard 3 1 widen_0 widen_4 upTo4 (pack 2 (λ (j : ℕ) → flagIf (natEq j 0) v1 v2)) apps liveAt cols
+
+atDeploySize : ℕ
+atDeploySize = guardSize 3 1 Unit atDeploy
+
+-- Stage 4 with v3 also live: v2 and v3 give the same backfillDone fact, and
+-- the guard has it one time (Q-S5-8 (a)).
+atDeployShared : Guard 3 1 Unit
+atDeployShared = stageGuard 3 1 widen_0 widen_4 upTo4 (pack 3 (λ (j : ℕ) → flagIf (natEq j 0) v1 (flagIf (natEq j 1) v2 v3))) apps (λ (i : ℕ) (j : ℕ) → natLe j 2) cols
+
+atDeploySharedSize : ℕ
+atDeploySharedSize = guardSize 3 1 Unit atDeployShared
+
+-- Stage 5, retire v1: the barrier only. compat does not refuse v1 yet.
+atRetire : Guard 3 1 Unit
+atRetire = stageGuard 3 1 widen_0 widen_5 upTo5 (pack 1 (λ (j : ℕ) → v2)) apps liveAt cols
+
+-- Stage 8, after dropColumn users name: compat refuses v1 (code 0), so the
+-- stage needs retired 0.
+atDrop : Guard 3 1 Unit
+atDrop = stageGuard 3 1 widen_0 widen_8 widen (pack 2 (λ (j : ℕ) → flagIf (natEq j 0) v2 v3)) apps liveAt cols
+
+-- A program CM twin of Guard with the closed fact type Fact 3 1 (the
+-- cells.lang form).
+data Pending (A : Type 0) : Type where
+  settled : (settledOf : A) → Pending A
+  awaits : (awaitsFact : Fact 3 1) → (awaitsRest : Pending A) → Pending A
+
+pendingSize : (p : Pending ℕ) → ℕ
+pendingSize p = fold (λ (a : ℕ) → 0) (λ (k : Fact 3 1) (r : ℕ) → natAdd r 1) p
+
+twinSize : ℕ
+twinSize = pendingSize (awaits ℕ (fleetAt 3 1 2) (awaits ℕ (retired 3 1 0) (settled ℕ 5)))

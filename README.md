@@ -6,10 +6,10 @@ requirements of each application version, and a migration protocol: a chain
 of steps. The checker computes which application versions stay compatible at
 each intermediate stage. It refuses a protocol that leaves a live
 application version without a column that the version needs. The host is
-TinyCC. The planned targets are PostgreSQL SQL stage files, a JSON
-compatibility report and a Wasm compatibility oracle module.
+TinyCC. The JSON compatibility report is built (S5). The planned targets
+are PostgreSQL SQL stage files and a Wasm compatibility oracle module.
 
-## Status (S4)
+## Status (S5)
 
 S1 gives the evolve-lang surface on the tcc-wasm kit of lang-template: the
 Agda-like syntax with ASCII aliases (`SPEC.md` section 2), `langc fmt`,
@@ -27,7 +27,9 @@ ASCII value printer. S2e adds univalence: `Glue`, `glue`, `unglue` and
 `table`, `app` and `protocol`, and the step check J1. S4 adds the
 compatibility checker: J2 (`compat`), J4 and J5, the codes of
 `docs/PLAN.md` 4.4, the demo `examples/rename.lang` and the laws L1, L4,
-L5 and L6. There is no SQL writer yet. `make check` passes.
+L5 and L6. S5 adds the runtime obligations (`Guard`, `stageGuard`) and
+the JSON compatibility report `langc report FILE PROTOCOL` (`SPEC.md` 6.2).
+There is no SQL writer yet. `make check` passes.
 `docs/PLAN.md` section 9 gives the slices, and `docs/STATUS.md` gives the state.
 
 evolve-lang does not promise zero downtime. The checker proves

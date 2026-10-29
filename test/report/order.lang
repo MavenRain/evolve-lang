@@ -1,0 +1,18 @@
+-- A golden report (S5 U3): the guard order of Q-S5-4 (a). Stage 5 (deploy v2)
+-- has fleetAt 4, then the runtime fact of v2, then retired v0 (v0 reads
+-- users.nick, which stage 2 drops).
+table users (id : bigint key, name : text, nick : text)
+
+app v0 (reads users.id, reads users.nick)
+
+app v1 (reads users.id, reads users.name)
+
+app v2 (reads users.id, reads users.full)
+
+protocol order where
+  retire v0
+  dropColumn users nick
+  addColumn users full text
+  backfill users full ← name batch 500
+  deploy v2
+  retire v1

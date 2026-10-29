@@ -243,11 +243,12 @@ is a core name.
 | `Chain n m s0 sk` | A protocol: a chain of steps from `s0` to `sk` (PLAN 4.1) | `data` with `nil : Chain n m s s` and `snoc : Chain n m s s' → Step n m s' s'' → Chain n m s s''` (`domain/domain.lang:200-202`) |
 | `Stage k` | A stage of a protocol with `k` steps (PLAN 4.1) | `Fin (k + 1)` (`domain/domain.lang:214-215`) |
 | `Code` | A refusal code of PLAN 4.4 (S4) | `data` with `dropRequired`, `missingColumn`, `staleRead`, `unfilledRead`, `nullInsert`, `stepIndex`, `lockScan`, `renameInplace`, in the 4.4 order (`domain/domain.lang:218-226`) |
-| `Fact n m` | A fact that only the run can show (PLAN 4.5, Q-S4-4 (a)) | `data` with `backfillDone t c` only; S5 adds the other facts (`domain/domain.lang:230-231`) |
-| `Verdict n m` | The verdict of `compat` for one live version at one stage (PLAN 4.2) | `data` with `compatible`, `refused (code : Code)`, `runtime (fact : Fact n m)` (`domain/domain.lang:234-237`) |
-| `LockMode` | The lock that a step takes on its table (PLAN 5.1) | `data` with `accessExclusive`, `shareRowExclusive`, `shareUpdateExclusive`, `rowExclusive`, `noLock` (`domain/domain.lang:240-245`) |
-| `ScanClass` | The scan class of a step (PLAN 5.1) | `data` with `metadata`, `scan`, `batched`, `noScan` (`domain/domain.lang:248-252`) |
-| `Live n` | The live versions at a stage: `k` apps at the codes 0 .. k - 1 (Q-S4-9 (a)) | `(k : ℕ) × (ℕ → App n)` (`domain/domain.lang:268-269`) |
+| `Fact n m` | A fact that only the run can show (PLAN 4.5, Q-S4-4 (a), Q-S5-3 (a)) | `data` with `backfillDone t c`, `retired (a : ℕ)` (`a` is the code of an app) and `fleetAt (s : ℕ)` (`s` is the stage before a barrier) (`domain/domain.lang:230-233`) |
+| `Verdict n m` | The verdict of `compat` for one live version at one stage (PLAN 4.2) | `data` with `compatible`, `refused (code : Code)`, `runtime (fact : Fact n m)` (`domain/domain.lang:236-239`) |
+| `LockMode` | The lock that a step takes on its table (PLAN 5.1) | `data` with `accessExclusive`, `shareRowExclusive`, `shareUpdateExclusive`, `rowExclusive`, `noLock` (`domain/domain.lang:242-247`) |
+| `ScanClass` | The scan class of a step (PLAN 5.1) | `data` with `metadata`, `scan`, `batched`, `noScan` (`domain/domain.lang:250-254`) |
+| `Live n` | The live versions at a stage: `k` apps at the codes 0 .. k - 1 (Q-S4-9 (a)) | `(k : ℕ) × (ℕ → App n)` (`domain/domain.lang:270-271`) |
+| `Guard n m A` | The runtime obligations: a value of `A` that holds only if the fact of each `need` node holds (PLAN 2.2, 4.5, Q-S5-4 (a)) | `data` with `done (a : A)` and `need (f : Fact n m) (rest : Guard n m A)`, the free monad of the one operation `need` (`domain/domain.lang:414-416`) |
 
 ### 5.1 The State fields
 
@@ -351,7 +352,7 @@ The chain operations (`domain/domain.lang:206-211`):
 | `compose n m s s1 s2 a b` | `Chain n m s s1 → Chain n m s1 s2 → Chain n m s s2` | `a`, then `b` (PLAN `_⨾_`, Q-S3-12 (a)) |
 | `length n m s s1 a` | `Chain n m s s1 → ℕ` | The number of steps of `a` |
 
-The checker operations (S4, `domain/domain.lang:257-407`). In each type,
+The checker operations (S4, `domain/domain.lang:259-409`). In each type,
 `a : Chain n m s0 s`, `h : Step n m s s1`, `v : App n`, `live : Live n`,
 `lives : ℕ → Live n` (the live set at each stage) and `cols : Cols n` (the
 columns of the program).
@@ -382,6 +383,40 @@ J2.3 includes columns dropped and added again under the same name:
 `addColumn`. The `phase` decision follows the most recent backfill, so a
 later backfill starts a new `backfillDone` runtime obligation.
 
+The runtime obligations (S5, `domain/domain.lang:411-491`). In each type,
+`g : Guard n m A`, `f : Fact n m`, `e : Fact n m`, `apps : Live n` (each app
+of the program in app order: the code of an app is its index) and `liveAt :
+ℕ → ℕ → Bool` (`liveAt i j` is true when the app with the code `j` is live
+at stage `i`).
+
+| Operation | Type | Meaning (design section) |
+|---|---|---|
+| `guardBind n m A B g k` | `Guard n m B` | Gives the value of `g` to `k : A → Guard n m B`. The `need` nodes of `g` stay in front |
+| `guardSize n m A g` | `ℕ` | The number of `need` nodes of `g` |
+| `sameFact n m f e` | `Bool` | `f` and `e` are the same fact |
+| `guardHas n m A g f` | `Bool` | `g` has a `need f` node |
+| `stageGuard n m s0 s a live apps liveAt cols` | `Guard n m Unit` | The obligations of stage `i`, the end of `a` (`i` is `length a`), in the order of Q-S5-4 (a): `fleetAt (i - 1)` when step `i` is a barrier; then every runtime read of each live app, in app and read order; then any remaining phase-2 backfill, in column order; then the necessary retirements, in app order. Each fact is in the guard one time (Q-S5-8 (a)). `live` is the live set at `i`, as for `compat` |
+
+The helpers `needNew`, `runtimeNew`, `eachApp`, `barrierGuard`,
+`runtimeReads`, `barrierFills`, `addLive`, `historyLive` and `retiredGuards`
+build `stageGuard`. The matrix keeps the first runtime fact of an app,
+while its stage guard includes every distinct runtime read. Every backfill
+in phase 2 is guarded at its first barrier, even if no live app reads it
+yet: phase 3 assumes that obligation has been discharged. A retired app
+needs a registry guard if its accesses fail with the historical writers
+present, or if adding it back makes any current live app fail. Historical
+apps are those live at any stage through `i`; future apps are excluded.
+This covers write-only retired apps and interactions between retired apps.
+
+The tests are in `test/eval/guard.lang` (17 evals): the
+monad laws of `guardBind` by `refl`, the guard at each stage of the
+protocol `widen`, and the CM twin `Pending` with the closed fact type
+`Fact 3 1`. Four C regressions in `test/cubical.c` cover multiple
+backfilled reads, a retired writer protecting a live reader, an unrelated
+first barrier and interactions between retired apps. `Pending` takes the
+type argument `A` because a program `data`
+with no type argument is `REFUSE_DATA` (rule R2).
+
 ### 6.1 Refusal codes of the domain
 
 `langc check` refuses a protocol with these eight codes. The texts are in
@@ -411,6 +446,39 @@ each step. Each S4 code has one check refusal; a recreated-column regression
 brings `test/check/j4-*.lang` to 7 files. `test/check/rename-drop-early.lang` is the demo variant with no
 `retire v1`: `REFUSE_STALE_READ` at stage 5 (`dropSync`, Q-S4-13 (a)).
 `examples/rename.lang` is the demo (PLAN 4.6).
+
+### 6.2 The compatibility report (`langc report`)
+
+`langc report PROG PROTOCOL` checks the program PROG and writes one JSON
+document for the protocol PROTOCOL on stdout (`docs/PLAN.md` 5.2). The
+keys are in this order:
+
+- `evolve`: the format version, 1.
+- `protocol`: the name PROTOCOL.
+- `stages`: one entry for each stage, with `index`, `steps` (`[]` at stage
+  0), `lock`, `scan` (`null` at stage 0) and `guards` (each with `fact` and
+  `guard`: the facts of `stageGuard`).
+- `apps`: the apps of the program, in declaration order.
+- `segments`: each run of stages with the same live set, with `stages` and
+  `live`.
+- `matrix`: one row for each app at each stage, in app order and then
+  stage order, with `app`, `stage`, `live` and `verdict`. A `refused` row
+  also has `code` and `fix`. A `runtime` row also has `fact` and `guard`.
+- `progress`: the `check --json` progress object.
+
+The error paths:
+
+- PROG does not pass `langc check`: `report` writes the `check --json`
+  lines and the exit is 1. The exit is 2 when PROG cannot be read.
+- PROG has no protocol PROTOCOL: `USAGE`, and the exit is 2.
+- PROG is not in canonical form: `report` writes the `W_NONCANON` line as
+  text on stderr. The document on stdout does not change and the exit is 0
+  (Q-S5-11 (a)).
+
+Tests: `test/gate.sh` runs `report` on each `test/report/NAME.json` and
+compares the document byte for byte. The program is
+`test/report/NAME.lang`, or `examples/NAME.lang` when there is no such
+file (Q-S5-7 (a)).
 
 ## 7. Target and instance encoding
 

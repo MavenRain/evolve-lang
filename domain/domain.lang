@@ -225,10 +225,12 @@ data Code : Type where
   lockScan : Code
   renameInplace : Code
 
--- A fact that only the run can show (Q-S4-4 (a)). S4 has `backfillDone t
--- c` only; S5 adds the others.
+-- A fact that only the run can show (PLAN 4.5, Q-S4-4 (a), Q-S5-3 (a)).
+-- `retired a` takes the app code a, `fleetAt s` the stage before a barrier.
 data Fact (n : ℕ) (m : ℕ) : Type where
   backfillDone : (doneTbl : Fin m) → (doneCol : Fin n) → Fact n m
+  retired : (retiredApp : ℕ) → Fact n m
+  fleetAt : (fleetStage : ℕ) → Fact n m
 
 -- The verdict of compat for one live version at one stage.
 data Verdict (n : ℕ) (m : ℕ) : Type where
@@ -405,6 +407,88 @@ dropSafe n m s0 s a lives = fold (λ (x : State n m) → true) (λ (x : State n 
 -- evaluates (J5).
 lockSafe : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → Bool
 lockSafe n m s0 s a = fold (λ (x : State n m) → true) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : Bool) → boolAnd ih (boolNot (boolAnd (isAccessExclusive (lockOf n m y z h)) (isScan (scanOf n m y z h))))) a
+
+-- The runtime obligations (S5, PLAN 2.2, Q-S5-4 (a)). `Guard n m A` is the
+-- free monad of the one operation `need`: a value of A that holds only if
+-- the fact of each `need` node holds.
+data Guard (n : ℕ) (m : ℕ) (A : Type 0) : Type where
+  done : (doneOf : A) → Guard n m A
+  need : (needFact : Fact n m) → (needRest : Guard n m A) → Guard n m A
+
+-- `guardBind n m A B g k` gives the value of g to k. The `need` nodes of g
+-- stay in front.
+guardBind : (n : ℕ) → (m : ℕ) → (A : Type 0) → (B : Type 0) → (g : Guard n m A) → (k : A → Guard n m B) → Guard n m B
+guardBind n m A B g k = fold (λ (a : A) → k a) (λ (f : Fact n m) (r : Guard n m B) → need n m B f r) g
+
+-- The number of `need` nodes of g.
+guardSize : (n : ℕ) → (m : ℕ) → (A : Type 0) → (g : Guard n m A) → ℕ
+guardSize n m A g = fold (λ (a : A) → 0) (λ (f : Fact n m) (r : ℕ) → natAdd r 1) g
+
+-- `sameFact n m f e` is true when f and e are the same fact. A fold over f,
+-- then over e, one case for each constructor, in the `Fact` order.
+sameFact : (n : ℕ) → (m : ℕ) → (f : Fact n m) → (e : Fact n m) → Bool
+sameFact n m f e = fold (λ (t : Fin m) (c : Fin n) → fold (λ (u : Fin m) (d : Fin n) → boolAnd (sameTbl m t u) (sameCol n c d)) (λ (j : ℕ) → false) (λ (j : ℕ) → false) e) (λ (i : ℕ) → fold (λ (u : Fin m) (d : Fin n) → false) (λ (j : ℕ) → natEq i j) (λ (j : ℕ) → false) e) (λ (i : ℕ) → fold (λ (u : Fin m) (d : Fin n) → false) (λ (j : ℕ) → false) (λ (j : ℕ) → natEq i j) e) f
+
+-- `guardHas n m A g f` is true when g has a `need f` node.
+guardHas : (n : ℕ) → (m : ℕ) → (A : Type 0) → (g : Guard n m A) → (f : Fact n m) → Bool
+guardHas n m A g f = fold (λ (a : A) → false) (λ (e : Fact n m) (r : Bool) → boolOr (sameFact n m e f) r) g
+
+-- `needNew n m g f` is g with `need f` after its `need` nodes, unless g has a
+-- `need f` node (Q-S5-8 (a)).
+needNew : (n : ℕ) → (m : ℕ) → (g : Guard n m Unit) → (f : Fact n m) → Guard n m Unit
+needNew n m g f = flagIf (guardHas n m Unit g f) g (guardBind n m Unit Unit g (λ (u : Unit) → need n m Unit f (done n m Unit unit)))
+
+-- `runtimeNew n m v g` is `needNew g f` when v is `runtime f`, else g.
+runtimeNew : (n : ℕ) → (m : ℕ) → (v : Verdict n m) → (g : Guard n m Unit) → Guard n m Unit
+runtimeNew n m v g = fold g (λ (c : Code) → g) (λ (f : Fact n m) → needNew n m g f) v
+
+-- `eachApp n m k p g` gives g to p 0, that result to p 1, and so on to
+-- p (k - 1).
+eachApp : (n : ℕ) → (m : ℕ) → (k : ℕ) → (p : ℕ → Guard n m Unit → Guard n m Unit) → (g : Guard n m Unit) → Guard n m Unit
+eachApp n m k p g = fold (λ (r : ℕ → Guard n m Unit → Guard n m Unit) (j : ℕ) (h : Guard n m Unit) → r (natAdd j 1) (p j h)) (λ (j : ℕ) (h : Guard n m Unit) → h) k 0 g
+
+-- `barrierGuard n m s0 s a` is `need (fleetAt (i - 1)) (done unit)` when the
+-- last step of a (step i) is a barrier, else `done unit`.
+barrierGuard : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → Guard n m Unit
+barrierGuard n m s0 s a = fold (λ (x : State n m) → done n m Unit unit) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : Guard n m Unit) → flagIf (isBarrier n m y z h) (need n m Unit (fleetAt n m (length n m x y w)) (done n m Unit unit)) (done n m Unit unit)) a
+
+-- All runtime reads of v, in read order. runtimeOf deliberately keeps only
+-- the first fact for the matrix; the guard must retain every distinct fact.
+runtimeReads : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (v : App n) → (g : Guard n m Unit) → Guard n m Unit
+runtimeReads n m s0 s a v g = eachApp n m (witness (readsOf n v)) (λ (j : ℕ) (h : Guard n m Unit) → runtimeNew n m (runtimeCol n m s0 s a (payload (readsOf n v) j) (compatible n m)) h) g
+
+-- Phase 2 is the first barrier after a backfill. Check every such backfill,
+-- even with no live reader: phase 3 assumes this obligation was discharged.
+barrierFills : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (cols : Cols n) → (g : Guard n m Unit) → Guard n m Unit
+barrierFills n m s0 s a cols g = eachApp n m (witness cols) (λ (j : ℕ) (h : Guard n m Unit) → flagIf (natEq (phase n m s0 s a (witness (payload cols j))) 2) (runtimeNew n m (runtimeCol n m s0 s a (payload cols j) (compatible n m)) h) h) g
+
+-- Append one app to a live set for a counterfactual retirement check.
+addLive : (n : ℕ) → (live : Live n) → (v : App n) → Live n
+addLive n live v = pack (natAdd (witness live) 1) (λ (j : ℕ) → flagIf (natEq j (witness live)) v (payload live j))
+
+-- The apps live at any stage through i, in app order. Retired apps cannot
+-- be assumed absent when deciding which registry guards are necessary.
+historyLive : (n : ℕ) → (apps : Live n) → (liveAt : ℕ → ℕ → Bool) → (i : ℕ) → Live n
+historyLive n apps liveAt i = fold (λ (r : ℕ → Live n → Live n) (j : ℕ) (l : Live n) → r (natAdd j 1) (flagIf (allFrom (natAdd i 1) (λ (e : ℕ) → boolNot (liveAt e j)) 0) l (addLive n l (payload apps j)))) (λ (j : ℕ) (l : Live n) → l) (witness apps) 0 (pack 0 (payload apps))
+
+-- A retired app needs a guard if its own accesses fail with the historical
+-- writers present, or if restoring it makes any current live app fail.
+-- This also covers a write-only app whose writes stale another app's read.
+retiredGuards : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (live : Live n) → (apps : Live n) → (history : Live n) → (liveAt : ℕ → ℕ → Bool) → (cols : Cols n) → (g : Guard n m Unit) → Guard n m Unit
+retiredGuards n m s0 s a live apps history liveAt cols g = eachApp n m (witness apps) (λ (j : ℕ) (h : Guard n m Unit) → flagIf (boolAnd (boolNot (liveAt (length n m s0 s a) j)) (boolAnd (boolNot (allFrom (length n m s0 s a) (λ (e : ℕ) → boolNot (liveAt e j)) 0)) (boolOr (isRefused n m (compat n m s0 s a history cols (payload apps j))) (boolNot (stageOk n m s0 s a (addLive n live (payload apps j)) cols))))) (needNew n m h (retired n m j)) h) g
+
+-- The obligations of stage i, the end of a (PLAN 4.5, Q-S5-4 (a)): `fleetAt
+-- (i - 1)` when step i is a barrier; then every runtime read of each live
+-- app, in app and read order; then any remaining phase-2 backfill, in column
+-- order; then the necessary retirements, in app order. A retirement protects
+-- both that app and the other apps from its continued presence, including
+-- interactions with other previously live apps. Each fact is in the guard
+-- one time (Q-S5-8 (a)). apps is the
+-- apps of the program in app order (the code of an app is its index),
+-- `liveAt i j` is true when the app j is live at stage i, and live is the
+-- live set at i, as for `compat`.
+stageGuard : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (live : Live n) → (apps : Live n) → (liveAt : ℕ → ℕ → Bool) → (cols : Cols n) → Guard n m Unit
+stageGuard n m s0 s a live apps liveAt cols = retiredGuards n m s0 s a live apps (historyLive n apps liveAt (length n m s0 s a)) liveAt cols (barrierFills n m s0 s a cols (eachApp n m (witness apps) (λ (j : ℕ) (g : Guard n m Unit) → flagIf (boolAnd (liveAt (length n m s0 s a) j) (boolNot (isRefused n m (compat n m s0 s a live cols (payload apps j))))) (runtimeReads n m s0 s a (payload apps j) g) g) (barrierGuard n m s0 s a)))
 
 -- Kit sample (Q-S3-5 (a)). The kit tests use these names. A later slice
 -- removes them, when the ir and wasm tests have evolve replacements.

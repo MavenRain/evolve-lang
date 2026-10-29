@@ -5,9 +5,9 @@ CFLAGS = -std=c99 -Wall -Werror -Isrc
 CLANG_FLAGS = -std=c99 -Wall -Wextra -Wswitch-enum -Werror -fsyntax-only -Isrc
 FRONT = src/front/base.c src/front/lexer.c src/front/parser.c src/front/fmt.c src/front/front.c src/front/eval.c src/front/check.c src/front/lower.c
 TARGET = src/wasm.c
-SRC = src/main.c $(FRONT) $(TARGET)
+SRC = src/main.c src/json.c $(FRONT) $(TARGET)
 FRONT_TOOL = test/fronttool.c $(filter-out src/front/front.c src/front/lower.c,$(FRONT))
-CUBICAL_TOOL = test/cubical.c $(filter-out src/front/lower.c,$(FRONT))
+CUBICAL_TOOL = test/cubical.c src/json.c $(filter-out src/front/lower.c,$(FRONT))
 HEADERS = $(wildcard src/*.h src/front/*.h)
 
 .PHONY: build check check-clang clean

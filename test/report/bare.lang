@@ -1,0 +1,7 @@
+-- A golden report (S5 U3): a protocol with no app. The apps, the live set of
+-- the segment and the matrix are empty.
+table items (id : bigint key, label : text)
+
+protocol bare where
+  addColumn items note text
+  dropColumn items label

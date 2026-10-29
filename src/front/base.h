@@ -68,4 +68,14 @@ void diag_print(const Diag *diag, FILE *out);
    fix, retry, message. */
 void diag_print_json(const Diag *diag, FILE *out);
 
+/* The JSON string rule of `check --json` and of src/json.c. TEXT points to
+   a byte that is not the terminating NUL. Writes the JSON form of the byte
+   or the UTF-8 scalar at TEXT to ESC (at most JSON_ESCAPE_MAX bytes, no
+   NUL), sets *ESC_LEN to its length and returns the number of bytes of
+   TEXT that it uses (1 to 4). `"` and `\` give \" and \\. A byte below
+   0x20 and each byte of an invalid UTF-8 sequence give \u00xx (no short
+   escapes). A valid UTF-8 scalar and all other ASCII bytes stay raw. */
+#define JSON_ESCAPE_MAX 8
+size_t json_escape(const char *text, char *esc, size_t *esc_len);
+
 #endif

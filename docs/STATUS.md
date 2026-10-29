@@ -878,3 +878,114 @@ These items are open for the USER. S4 does not change them.
   that `affine` and `laws` stay `"0 of 0"` until S3 and S4.
 - Q-S4-1 to Q-S4-16 and F-U0-2 are RULED (Q-S4-15 (a), Q-S4-16 (a):
   USER 2026-10-28). Q-S2b-1 to Q-S2b-8 stay open (PLAN section 11).
+
+## S5: the JSON compatibility report (`Fact`, `Guard`, `langc report`)
+
+S5 adds the runtime obligations and the JSON compatibility report. The
+domain gets the facts `retired` and `fleetAt`, the type `Guard n m A` and
+the guest `stageGuard`. `check_protocol` fills a C `Report` for each
+protocol, and `langc report FILE PROTOCOL` writes it as one JSON document
+(PLAN 5.2). SPEC.md sections 5, 6 and 6.2 give the report.
+
+### Source
+- The `Out` core of lang-template 5265a2a `hosts/tcc-json/src/json.c`,
+  with no `Machine` (Q-S5-1 (a)). The typed value printer is not ported.
+  S5 changes 15 files and adds 14 files. It removes no file.
+
+### Units
+- U0, the facts and the guards: `Fact n m` gets `retired (a : ℕ)` (the
+  code of an app, in program app order) and `fleetAt (s : ℕ)` (Q-S5-3
+  (a)). New type `Guard n m A` (`done`, `need`) and the guest
+  `stageGuard` with `sameFact`, `guardHas`, `needNew`, `runtimeNew` and
+  `eachApp`: `fleetAt` at a barrier, then each distinct `backfillDone` of
+  a live `runtime` verdict, then `retired` for each retired app whose
+  `compat` is refused (Q-S5-4 (a), Q-S5-8 (a): one `need` node for each
+  distinct fact). New test: `test/eval/guard.lang`.
+- U1, the writer: `src/json.c` and `src/json.h` (`JsonOut` on the arena;
+  `json_put`, `json_put_text`, `json_put_string`). `src/front/base.c`
+  exports `json_escape`, and `check --json` and the writer use it (UTF-8
+  raw, controls `\u00xx`, `\"` and `\\`). The `Makefile` builds
+  `src/json.c`. New regressions in `test/cubical.c`: 21 writer cases.
+- U2, the report: the C `Report` in `src/front/check.h` (stages, apps,
+  segments, cells, guard facts). `check_protocol` fills it
+  (`fm_report_start`, `fm_report_stage`, `fm_report_cell`, `fm_fact`).
+  A pair that is not live gets the guest `compat` verdict (Q-S5-9 (a)).
+  `json_report` writes the keys of Q-S5-10 (a), and `progress` is the
+  `check --json` progress object (Q-S5-6 (a)). `src/main.c` adds the
+  command `report` (Q-S5-2 (a): the program must pass `check`).
+  `W_NONCANON` on `report` goes to stderr as text, and the exit is 0
+  (Q-S5-11 (a)).
+- U3, the goldens: `test/report/NAME.lang` and `NAME.json` for bare,
+  fleet, order, single and strict, and `rename.json` for
+  `examples/rename.lang` (Q-S5-7 (a)). `test/gate.sh` compares each
+  document byte for byte and prints `report: 6 golden reports`.
+- U4, the mutants and the docs: SPEC.md 6.2, PLAN 5.2 and the S5 row,
+  the `docs/DIAGNOSTICS.md` progress sentence, the `README.md` status and
+  this section.
+
+### Gate counts against S4
+
+| Count | S4 (d10e389) | S5 |
+|---|---|---|
+| examples | 12 | 12 |
+| parse refusals | 10 | 10 |
+| check refusals | 79 | 79 |
+| evals | 185 | 202 |
+| ir lowered | 12 | 12 |
+| wasm modules | 16 | 16 |
+| differential cases (0 mismatches) | 892 | 892 |
+| fmt canonical, non-canonical pairs | 153, 7 | 159, 7 |
+| json fixtures | 38 | 38 |
+| diagnostics codes (fixture, no fixture) | 51 (36, 15) | 51 (36, 15) |
+| golden reports | none | 6 |
+| cubical checks, round trips | 52, 29 | 52, 29 |
+| json writer regressions | none | 21 |
+
+The gate has 0 failures. The review, domain and diagnostic edit
+regressions pass.
+
+### Op values
+51 Op values. S5 adds no Op. `src/front/eval.c` and the kernel do not
+change.
+
+### Mutants
+Each mutant makes one change, then `make -B` and the golden report loop
+run. These 11 mutants are all KILLED.
+
+| Mutant | Site | Result |
+|---|---|---|
+| M1 | `fm_report_cell`: a `compatible` cell becomes `runtime` | KILLED by fleet, order, rename, single and strict |
+| M2 | `fm_report_cell`: a `runtime` cell becomes `compatible` | KILLED by order and rename |
+| M3 | `fm_report_cell`: a `refused` cell becomes `compatible` | KILLED by fleet, order, rename and strict |
+| M4 | `fm_report_cell`: the `live` bit is inverted | KILLED by fleet, order, rename, single and strict |
+| M5 | `fm_report_stage`: the last guard fact of a stage is lost | KILLED by fleet, order, rename and strict |
+| M6 | `fm_report_start`: no new segment when the live set changes | KILLED by fleet, order, rename and strict |
+| M7 | `json_put_verdict`: a `refused` row writes `fix` as `code` | KILLED by fleet, order, rename and strict |
+| M8 | `json_report`: the `stage` of a matrix row is the app index | KILLED by fleet, order, rename, single and strict |
+| M9 | `fm_fact`: the table and column fields of `backfillDone` swap | KILLED by order and rename (exit 1) |
+| M10 | `fm_fact`: the stage of `fleetAt` is one more | KILLED by fleet, order, rename and strict |
+| M11 | `stageGuard` (`domain/domain.lang`): no `retired` fact | KILLED by fleet, order, rename and strict |
+
+### S5 staged review fixes
+
+Three missing runtime obligations were reproduced with four failing C
+regressions in `test/cubical.c`:
+
+- An app reading two backfilled columns supplied only its first fact.
+  `runtimeReads` now retains every distinct fact in app and read order.
+- A write-only retired app could stale another app without refusing its
+  own accesses. `retiredGuards` checks its effect on the current live set
+  and its own accesses with historical writers present. The fourth
+  regression covers two retired apps whose combined presence is unsafe.
+- An unrelated first barrier could move a backfill to phase 3 without
+  ever checking its completion. `barrierFills` now checks any remaining
+  phase-2 backfill at that barrier.
+
+The report matrix still shows its first runtime fact. Stage guards are
+deduplicated and include all required facts. The four regression cases
+failed on the original staged implementation and pass with these fixes.
+
+### Open items from S5
+- Q-S5-1 to Q-S5-11 are RULED (a) (USER 2026-10-29). Q-S2b-1 to Q-S2b-8
+  stay open (PLAN section 11).
+- The `guard` text is the PLAN 4.5 sentence. S6 writes the SQL guards.

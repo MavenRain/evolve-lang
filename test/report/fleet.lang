@@ -1,0 +1,17 @@
+-- A golden report (S5 U3): three apps and five segments. Each barrier gives a
+-- fleetAt guard. The drop of items.label refuses v1 and v2, which are
+-- retired, so stage 5 has two retired guards, in app order.
+table items (id : bigint key, label : text)
+
+app v1 (reads items.id, reads items.label)
+
+app v2 (reads items.id, reads items.label, writes items.label)
+
+app v3 (reads items.id)
+
+protocol fleet where
+  deploy v2
+  deploy v3
+  retire v1
+  retire v2
+  dropColumn items label
