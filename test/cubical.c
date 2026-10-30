@@ -3,6 +3,7 @@
 #include "front/check.h"
 #include "front/front.h"
 #include "json.h"
+#include "sql.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -73,6 +74,42 @@ static int escape_case(const char *label, const char *text, const char *want) {
             out.data == NULL ? "no text" : out.data);
     if (diag.set) diag_print(&diag, stderr);
   }
+  arena_release(&arena);
+  return ok;
+}
+
+/* sql_put_quoted gives the WANT bytes for TEXT and the quote Q. The surface
+   has no name with a quote, so no test/sql golden doubles a quote. */
+static int quote_case(const char *label, const char *text, char q, const char *want) {
+  Arena arena;
+  Diag diag;
+  JsonOut out;
+  arena_init(&arena, (size_t)1 << 20);
+  diag_init(&diag);
+  json_out_init(&out, &arena, &diag, "sql-regression");
+  int ok = sql_put_quoted(&out, text, q) && strcmp(out.data, want) == 0;
+  if (!ok) {
+    fprintf(stderr, "FAIL sql quote %s: wanted %s, got %s\n", label, want, out.data == NULL ? "no text" : out.data);
+    if (diag.set) diag_print(&diag, stderr);
+  }
+  arena_release(&arena);
+  return ok;
+}
+
+/* sql_name of stage 2 (width 2) with the suffix sync and a protocol of LEN
+   bytes: 15 + LEN bytes. 63 bytes give rc 1; 64 bytes give SQL_NAME_LONG. */
+static int name_case(size_t len) {
+  Arena arena;
+  Diag diag;
+  JsonOut name;
+  char protocol[64];
+  memset(protocol, 'a', len);
+  protocol[len] = '\0';
+  arena_init(&arena, (size_t)1 << 20);
+  diag_init(&diag);
+  int rc = sql_name(&arena, &diag, &name, protocol, 2, 2, "sync");
+  int ok = 15 + len <= 63 ? rc == 1 && name.len == 15 + len : rc == 0 && diag.set && strcmp(diag.code, "SQL_NAME_LONG") == 0;
+  if (!ok) fprintf(stderr, "FAIL sql name of a %zu-byte protocol: rc %d\n", len, rc);
   arena_release(&arena);
   return ok;
 }
@@ -399,6 +436,11 @@ int main(void) {
   if (ok) printf("cubical regressions: %zu checks, %zu round trips passed\n",
                  sizeof checks / sizeof checks[0], sizeof rounds / sizeof rounds[0]);
   if (json_ok) printf("json writer regressions: %zu cases passed\n", sizeof escapes / sizeof escapes[0] + 1u);
+  int sql_ok = quote_case("name", "a\"b", '"', "\"a\"\"b\"");
+  sql_ok &= quote_case("string", "it's", '\'', "'it''s'");
+  sql_ok &= name_case(48);
+  sql_ok &= name_case(49);
   if (report_ok) printf("report guard regressions: %zu cases passed\n", sizeof reports / sizeof reports[0]);
-  return ok && json_ok && report_ok ? 0 : 1;
+  if (sql_ok) printf("sql writer regressions: 4 cases passed\n");
+  return ok && json_ok && report_ok && sql_ok ? 0 : 1;
 }

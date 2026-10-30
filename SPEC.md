@@ -239,16 +239,17 @@ is a core name.
 | `State n m` | The schema state (PLAN 4.1) | An iterated Sigma of the 9 fields of 5.1 (`domain/domain.lang:23-54`) |
 | `Cols n` | A vector of columns: `k` columns at the codes 0 .. k - 1 (Q-S4-9 (a)) | `(k : ℕ) × (ℕ → Fin n)` (`domain/domain.lang:58-59`) |
 | `App n` | An application version: the columns that it reads, the columns that it writes on update, the columns that it supplies on insert (PLAN 4.1) | `Cols n × Cols n × Cols n` (`domain/domain.lang:62-63`) |
-| `Step n m s s'` | One step that changes the state `s` into `s'` (PLAN 4.1, J1 of 4.2) | `data` with two `State n m` indices and one constructor for each step word of section 6 (`domain/domain.lang:186-197`) |
-| `Chain n m s0 sk` | A protocol: a chain of steps from `s0` to `sk` (PLAN 4.1) | `data` with `nil : Chain n m s s` and `snoc : Chain n m s s' → Step n m s' s'' → Chain n m s s''` (`domain/domain.lang:200-202`) |
-| `Stage k` | A stage of a protocol with `k` steps (PLAN 4.1) | `Fin (k + 1)` (`domain/domain.lang:214-215`) |
-| `Code` | A refusal code of PLAN 4.4 (S4) | `data` with `dropRequired`, `missingColumn`, `staleRead`, `unfilledRead`, `nullInsert`, `stepIndex`, `lockScan`, `renameInplace`, in the 4.4 order (`domain/domain.lang:218-226`) |
-| `Fact n m` | A fact that only the run can show (PLAN 4.5, Q-S4-4 (a), Q-S5-3 (a)) | `data` with `backfillDone t c`, `retired (a : ℕ)` (`a` is the code of an app) and `fleetAt (s : ℕ)` (`s` is the stage before a barrier) (`domain/domain.lang:230-233`) |
-| `Verdict n m` | The verdict of `compat` for one live version at one stage (PLAN 4.2) | `data` with `compatible`, `refused (code : Code)`, `runtime (fact : Fact n m)` (`domain/domain.lang:236-239`) |
-| `LockMode` | The lock that a step takes on its table (PLAN 5.1) | `data` with `accessExclusive`, `shareRowExclusive`, `shareUpdateExclusive`, `rowExclusive`, `noLock` (`domain/domain.lang:242-247`) |
-| `ScanClass` | The scan class of a step (PLAN 5.1) | `data` with `metadata`, `scan`, `batched`, `noScan` (`domain/domain.lang:250-254`) |
-| `Live n` | The live versions at a stage: `k` apps at the codes 0 .. k - 1 (Q-S4-9 (a)) | `(k : ℕ) × (ℕ → App n)` (`domain/domain.lang:270-271`) |
-| `Guard n m A` | The runtime obligations: a value of `A` that holds only if the fact of each `need` node holds (PLAN 2.2, 4.5, Q-S5-4 (a)) | `data` with `done (a : A)` and `need (f : Fact n m) (rest : Guard n m A)`, the free monad of the one operation `need` (`domain/domain.lang:414-416`) |
+| `Step n m s s'` | One step that changes the state `s` into `s'` (PLAN 4.1, J1 of 4.2) | `data` with two `State n m` indices and 12 constructors, one for each step word of section 6 (`domain/domain.lang:192-204`) |
+| `Chain n m s0 sk` | A protocol: a chain of steps from `s0` to `sk` (PLAN 4.1) | `data` with `nil : Chain n m s s` and `snoc : Chain n m s s' → Step n m s' s'' → Chain n m s s''` (`domain/domain.lang:207-209`) |
+| `Stage k` | A stage of a protocol with `k` steps (PLAN 4.1) | `Fin (k + 1)` (`domain/domain.lang:221-222`) |
+| `Code` | A refusal code of PLAN 4.4 (S4) | `data` with `dropRequired`, `missingColumn`, `staleRead`, `unfilledRead`, `nullInsert`, `stepIndex`, `lockScan`, `renameInplace`, in the 4.4 order (`domain/domain.lang:225-233`) |
+| `Fact n m` | A fact that only the run can show (PLAN 4.5, Q-S4-4 (a), Q-S5-3 (a)) | `data` with `backfillDone t c`, `retired (a : ℕ)` (`a` is the code of an app) and `fleetAt (s : ℕ)` (`s` is the stage before a barrier) (`domain/domain.lang:237-240`) |
+| `Verdict n m` | The verdict of `compat` for one live version at one stage (PLAN 4.2) | `data` with `compatible`, `refused (code : Code)`, `runtime (fact : Fact n m)` (`domain/domain.lang:243-246`) |
+| `LockMode` | The lock that a step takes on its table (PLAN 5.1) | `data` with `accessExclusive`, `shareRowExclusive`, `shareUpdateExclusive`, `rowExclusive`, `noLock` (`domain/domain.lang:249-254`) |
+| `ScanClass` | The scan class of a step (PLAN 5.1) | `data` with `metadata`, `scan`, `batched`, `noScan` (`domain/domain.lang:257-261`) |
+| `Live n` | The live versions at a stage: `k` apps at the codes 0 .. k - 1 (Q-S4-9 (a)) | `(k : ℕ) × (ℕ → App n)` (`domain/domain.lang:277-278`) |
+| `Guard n m A` | The runtime obligations: a value of `A` that holds only if the fact of each `need` node holds (PLAN 2.2, 4.5, Q-S5-4 (a)) | `data` with `done (a : A)` and `need (f : Fact n m) (rest : Guard n m A)`, the free monad of the one operation `need` (`domain/domain.lang:421-423`) |
+| `KeyRange` | The key range of one backfill batch: the low key, then the high key (PLAN 3.2, Q-S6-12 (a)) | `ℕ × ℕ` (`domain/domain.lang:502-503`) |
 
 ### 5.1 The State fields
 
@@ -277,7 +278,7 @@ are new; they have no ASCII alias.
 decl   := ...
         | 'table' NAME '(' column (',' column)* ')'
         | 'app' NAME '(' (item (',' item)*)? ')'
-        | 'protocol' NAME 'where' step+
+        | 'protocol' NAME ('lockTimeout' NAT)? 'where' step+
 column := NAME ':' NAME 'key'?
 item   := ('reads' | 'writes' | 'inserts') NAME '.' NAME
 step   := WORD NAME NAME NAME          (addColumn t c ty, installSync t c c',
@@ -285,7 +286,8 @@ step   := WORD NAME NAME NAME          (addColumn t c ty, installSync t c c',
         | 'backfill' NAME NAME '←' NAME 'batch' NAT
         | WORD NAME                     (deploy a, retire a)
         | WORD NAME NAME                (dropColumn, addNotNullCheck, validate,
-                                        setNotNull, dropCheck: t c)
+                                        setNotNull, dropCheck,
+                                        createIndexConcurrently: t c)
 ```
 
 - `table`: each table marks exactly one column `key` (Q-S3-24 (a)). The
@@ -295,8 +297,13 @@ step   := WORD NAME NAME NAME          (addColumn t c ty, installSync t c c',
   In a program with no column (`n = 0`), an `app` gets `TYPE_REFL`
   (Q-S4-12 (a)); before S4 it checked.
 - `protocol`: one step on each line, under the layout rule (2.4). The step
-  words are the 11 words of section 6 and `renameColumn`, which the checker
+  words are the 12 words of section 6 and `renameColumn`, which the checker
   refuses (`REFUSE_RENAME_INPLACE`).
+- `lockTimeout NAT` (S6, Q-S6-6 (a)): the PostgreSQL `lock_timeout` of the
+  protocol, in milliseconds, for the SQL writer. The value is from 1 to
+  2147483647; another value gives `PARSE_EXPECT` (Q-S6-15 (a)). With no
+  clause, the value is 2000. `lockTimeout` is a word, not a keyword.
+  `langc fmt` keeps the clause.
 
 The elaboration gives these definitions (Q-S3-23 (a)). An unknown name in a
 form gives `NAME_UNKNOWN` with the name as written (Q-S3-25 (a)).
@@ -319,11 +326,11 @@ is nullable, has CHECK absent and is not filled. There is no sync.
 > Write here (DOMAIN SLOT): only the operations of `design/DESIGN.md`. Give
 > each operation its type and its meaning in the design.
 
-The operations are the 11 step words of a `protocol`. Each step word is a
-constructor of `Step n m` (`domain/domain.lang:174-185`). A step with a
+The operations are the 12 step words of a `protocol`. Each step word is a
+constructor of `Step n m` (`domain/domain.lang:192-204`). A step with a
 `pre` function takes a witness `Path Bool (pre ...) true`, and its target is
 the `post` function of its source (J1 of PLAN 4.2, Q-S3-2 (a), Q-S3-21 (a)).
-The `pre` and `post` functions are at `domain/domain.lang:130-182`. "`c` in
+The `pre` and `post` functions are at `domain/domain.lang:131-188`. "`c` in
 `t`" means that `c` is present and `owner c = t` (`inTbl`).
 
 | Operation | Type | Meaning: pre (must be true) | Meaning: target (post) |
@@ -339,20 +346,21 @@ The `pre` and `post` functions are at `domain/domain.lang:130-182`. "`c` in
 | `validate t c` | `Step n m s (postValidate n m s t c)` | CHECK notValid | CHECK valid |
 | `setNotNull t c` | `Step n m s (postSetNotNull n m s t c)` | `c` in `t`; nullable | notNull |
 | `dropCheck t c` | `Step n m s (postDropCheck n m s t c)` | CHECK not absent | CHECK absent |
+| `createIndexConcurrently t c` | `Step n m s s` | `c` in `t` | the same state (no index field, Q-S6-10 (a)) |
 
 `deploy` and `retire` change the live set, not the schema (PLAN 4.1). Each
 app of the program that the protocol does not `deploy` is live at stage 0;
 `deploy a` adds `a` and `retire a` removes it (Q-S4-2 (a)). `setNotNull` with
 no `valid` CHECK is J5 (`REFUSE_LOCK_SCAN`), not J1.
 
-The chain operations (`domain/domain.lang:206-211`):
+The chain operations (`domain/domain.lang:213-218`):
 
 | Operation | Type | Meaning (design section) |
 |---|---|---|
 | `compose n m s s1 s2 a b` | `Chain n m s s1 → Chain n m s1 s2 → Chain n m s s2` | `a`, then `b` (PLAN `_⨾_`, Q-S3-12 (a)) |
 | `length n m s s1 a` | `Chain n m s s1 → ℕ` | The number of steps of `a` |
 
-The checker operations (S4, `domain/domain.lang:259-409`). In each type,
+The checker operations (S4, `domain/domain.lang:266-416`). In each type,
 `a : Chain n m s0 s`, `h : Step n m s s1`, `v : App n`, `live : Live n`,
 `lives : ℕ → Live n` (the live set at each stage) and `cols : Cols n` (the
 columns of the program).
@@ -378,12 +386,29 @@ columns of the program).
 C driver makes them from the `deploy` and `retire` steps. A program proves a
 decision on its protocol by `refl` (PLAN 6.1, Q-S4-7 (a)).
 
+L2 and L3 (PLAN 6.1, Q-S6-12 (a)) are not domain operations.
+`test/eval/backfill-laws.lang` states them on the rename protocol as
+decisions over a table model of 10 rows, and proves each decision by
+`refl`. The batch size is the batch of the `backfill` step of the protocol.
+L2 is `twiceOnce` (the backfill run two times gives the table of one run)
+and `resumed` (the run from the ledger point, after the first batch, gives
+the table of the run with no stop). `ledgerBisim` proves that the plan from
+the ledger point is bisimilar to the tail of the full plan. L3 is
+`writeKeep` (at the `installSync` stage, each write keeps its row synced),
+`rowsAfter` (after the backfill, each row is synced) and `readsMove` (the
+transport along `ua` of the row swap moves the read of `v1` to the read of
+`v3`; `movesRead` is the same for each row). `Stream`, `StreamBisim` and
+the table model are program definitions in the test program. `StreamBisim`
+is the pointwise form, because the CC rule refuses an indexed cofamily. The
+broken models `addTwice`, `skipResume`, `writeNoSync` and `lateFill` give
+`false`.
+
 J2.3 includes columns dropped and added again under the same name:
 `needsFill` tracks additions through the chain, and `filled` is cleared by
 `addColumn`. The `phase` decision follows the most recent backfill, so a
 later backfill starts a new `backfillDone` runtime obligation.
 
-The runtime obligations (S5, `domain/domain.lang:411-491`). In each type,
+The runtime obligations (S5, `domain/domain.lang:418-498`). In each type,
 `g : Guard n m A`, `f : Fact n m`, `e : Fact n m`, `apps : Live n` (each app
 of the program in app order: the code of an app is its index) and `liveAt :
 ℕ → ℕ → Bool` (`liveAt i j` is true when the app with the code `j` is live
@@ -479,6 +504,133 @@ Tests: `test/gate.sh` runs `report` on each `test/report/NAME.json` and
 compares the document byte for byte. The program is
 `test/report/NAME.lang`, or `examples/NAME.lang` when there is no such
 file (Q-S5-7 (a)).
+
+### 6.3 The SQL protocol (`langc sql`)
+
+`langc sql PROG PROTOCOL OUTDIR` checks the program PROG and writes the
+PostgreSQL files of the protocol PROTOCOL in the directory OUTDIR
+(`docs/PLAN.md` 5.1). OUTDIR must exist (Q-S6-26 (a)). The command writes
+nothing on stdout.
+
+The files (Q-S6-1 (a), Q-S6-2 (a)):
+
+- `00-setup.sql` is stage 0. Each stage I from 1 to K has the file
+  `NN-WORD.sql`: NN is I with 2 digits (more digits when K is more than
+  99), and WORD is the step word of the stage.
+- Line 1 of each file is `-- evolve 1; source fnv1a64 HEX; stage I of K:
+  STEP`. `1` is the format version, HEX is the FNV-1a 64 hash of the
+  source text of PROG, and STEP is the step of the stage. In
+  `00-setup.sql`, the line ends with `stage 0 of K: setup`.
+
+The run (Q-S6-3 (a)): `psql -v tenant=NAME -f FILE` for each file, in
+stage order. The tables of the tenant NAME are in the schema NAME. Run
+`00-setup.sql` one time for each tenant: it adds the tenant row and the
+stage 0 progress row. Every file first requires an existing schema whose
+name exactly equals NAME as text. An absent or overlong tenant name stops
+with `EVOLVE_TENANT NAME` before any migration or ledger write. Quoting
+alone does not prevent PostgreSQL from truncating an identifier.
+
+`00-setup.sql` makes the schema `evolve` with the tables `progress`,
+`tenants`, `backfill` and `app_versions` (`app`, `live`, `changed_at`,
+`seen_at`), and the functions `evolve.stage_done` and `evolve.ddl`.
+`evolve.ddl` runs one DDL statement. When the statement stops on a lock
+timeout (SQLSTATE `55P03`), the function waits 1 s and tries again, 5
+tries in all (Q-S6-5 (a), Q-S6-17 (a)).
+
+Each file starts with `\set ON_ERROR_STOP on`, sets `evolve.tenant`,
+checks the exact schema name and sets `search_path TO pg_catalog,
+:"tenant", pg_temp`. Generated function and procedure definitions and
+backfill calls explicitly name the tenant schema. A table step also checks that its unqualified table
+name resolves to the table in the exact tenant schema. An absent table or
+a different resolution stops with `EVOLVE_TABLE TABLE`, before guards or
+migration writes. This prevents a temporary or catalog relation from
+receiving the tenant's migration. Each
+stage file then sets the lock
+timeout and reads the ledger: `SELECT NOT evolve.stage_done(P, I) AS run
+\gset evolve_` and `\if :evolve_run`. When the ledger has the stage, the
+file skips the step (Q-S6-18 (a)). In the `\if` block, the file runs the
+guards of the stage, then the step, then it adds the progress row.
+
+- A transaction stage: `BEGIN; SET LOCAL lock_timeout = 'Nms';` at the
+  start and `COMMIT;` at the end (Q-S6-6 (a)).
+- A bare stage (`backfill`, `createIndexConcurrently`): `SET lock_timeout
+  = 'Nms';`, with no `BEGIN` and no `COMMIT`. The backfill procedure
+  commits each batch, and `CREATE INDEX CONCURRENTLY` cannot run in a
+  transaction block (Q-S6-10 (a)).
+- N is the `lockTimeout` of the protocol (5.2), or 2000 when the protocol
+  has no `lockTimeout` clause.
+
+The steps with generated SQL objects (P is the protocol name and NN the
+stage):
+
+- `installSync T C S`: one `BEFORE INSERT OR UPDATE` trigger with the
+  function `evolve_P_NN_sync` keeps C and S equal. When an UPDATE changes
+  the two columns, C wins (Q-S6-8 (a)). `dropSync` can name the pair in
+  either order and drops the objects of the most recent matching install.
+- `backfill T C ← S batch B`: the procedure `evolve_P_NN_fill` copies S
+  to C in key order, B rows in each batch, and commits after each batch.
+  The table `evolve.backfill` keeps the next key, so a new run starts
+  after the last batch that committed (Q-S6-7 (a)).
+- `addNotNullCheck`: the constraint `evolve_P_NN_nn`, `CHECK (C IS NOT
+  NULL) NOT VALID`. The writer uses this PostgreSQL 15 path only, not the
+  PostgreSQL 18 form `NOT NULL ... NOT VALID` (Q-S6-9 (a), `docs/PLAN.md`
+  O4).
+- `createIndexConcurrently`: the index `evolve_P_NN_idx`. When an INVALID
+  index with this name exists (a failed run), the stage drops it with
+  `DROP INDEX CONCURRENTLY` and builds it again. Before cleanup, any
+  existing object with this name must be a nonunique, single-column
+  btree index of the intended table and column, with the default column
+  options and no expression, predicate or included column. A mismatch
+  stops with `EVOLVE_INDEX NAME`. After creation the same check also
+  requires a valid, ready, live index before recording stage completion.
+- `deploy A` and `retire A` write the row of A in `evolve.app_versions`:
+  `deploy` sets `live`, `retire` clears it. When `live` changes,
+  `changed_at` changes too (Q-S6-4 (a)).
+
+The writer quotes each name (Q-S6-11 (a)). A generated SQL object name or
+a table or column name used by the protocol of more than 63 bytes gives
+`SQL_NAME_LONG` before any file is written (Q-S6-16 (a)). App and protocol
+names stored as registry text are not SQL identifiers. The backfill procedure has the
+variables `evolve_last_key`, `evolve_next_text` and `evolve_finished`
+(Q-S6-23 (a)). SQL expressions qualify the key columns and the local
+cursor with the block label `evolve_fill`, so user columns can have these
+names too.
+
+The guards are the facts of `stageGuard` (6.2, `docs/PLAN.md` 4.5). Each
+guard is a `DO $evolve$ ... $evolve$` block. When the condition is false,
+the block does `RAISE EXCEPTION 'EVOLVE_GUARD %', 'FACT' USING DETAIL =
+'GUARD'` (SQLSTATE `P0001`, Q-S6-21 (a), Q-S6-24 (a)). FACT is the fact
+(for example `fleetAt 3`), and GUARD is its `guard` text of 6.2.
+
+- `fleetAt N`: each row of `evolve.tenants` has a progress row with stage
+  N or a later stage.
+- `retired A`: the `app_versions` row of A is not live and has no
+  `seen_at` after `changed_at`.
+- `backfillDone T C`: the backfill stage is done, and no row of T has C
+  null and the source column not null.
+
+The app contract (Q-S6-4 (a)): each instance of an app writes `seen_at` of
+the row of its app in `evolve.app_versions`. The writer does not make this
+code. Without it, the `retired` guard cannot see an instance that still
+runs.
+
+The exit codes:
+
+- 0: the writer wrote all the files.
+- 1: PROG does not pass `langc check` (the `check` diagnostics as text on
+  stderr), or a name is too long (`SQL_NAME_LONG`; the writer writes no
+  file).
+- 2: `USAGE` (for example, PROG has no protocol PROTOCOL), `IO` (for
+  example, OUTDIR does not exist or the writer cannot write a file), `OOM`
+  or `INTERNAL`.
+
+Tests: `test/gate.sh` runs `sql` for each directory `test/sql/NAME/`, with
+NAME as the protocol. The program is `test/sql/NAME.lang`, or
+`test/report/NAME.lang`, or `examples/NAME.lang` (the first file that
+exists, Q-S6-13 (a), Q-S6-25 (a)). The run must write the same file names,
+and each file must be equal to its golden file byte for byte. The staged
+review executed the files in PostgreSQL WASM (`docs/STATUS.md`, S6 review).
+A native server run remains open (Q-S6-14 (a), `docs/PLAN.md` O19).
 
 ## 7. Target and instance encoding
 

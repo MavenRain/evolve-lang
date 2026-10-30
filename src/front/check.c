@@ -3107,27 +3107,29 @@ typedef struct {
   uint32_t n;
 } Forms;
 
-/* The step words: the column names after the table, a type (addColumn),
-   a batch size (backfill). deploy and retire name an app and have no
-   post State. */
+/* The step words: the domain pre and post, the column names after the
+   table, a type (addColumn), a batch size (backfill). deploy and retire
+   name an app and have no pre and no post State. createIndexConcurrently
+   has a pre and no post State (Q-S6-10 (a)). */
 typedef struct {
-  const char *word, *post;
+  const char *word, *pre, *post;
   uint32_t cols;
   int type, batch;
 } StepForm;
 
 static const StepForm STEP_FORMS[] = {
-  {"addColumn", "postAddColumn", 1, 1, 0},
-  {"installSync", "postInstallSync", 2, 0, 0},
-  {"dropSync", "postDropSync", 2, 0, 0},
-  {"backfill", "postBackfill", 2, 0, 1},
-  {"deploy", NULL, 0, 0, 0},
-  {"retire", NULL, 0, 0, 0},
-  {"dropColumn", "postDropColumn", 1, 0, 0},
-  {"addNotNullCheck", "postAddNotNullCheck", 1, 0, 0},
-  {"validate", "postValidate", 1, 0, 0},
-  {"setNotNull", "postSetNotNull", 1, 0, 0},
-  {"dropCheck", "postDropCheck", 1, 0, 0}
+  {"addColumn", "preAddColumn", "postAddColumn", 1, 1, 0},
+  {"installSync", "preInstallSync", "postInstallSync", 2, 0, 0},
+  {"dropSync", "preDropSync", "postDropSync", 2, 0, 0},
+  {"backfill", "preBackfill", "postBackfill", 2, 0, 1},
+  {"deploy", NULL, NULL, 0, 0, 0},
+  {"retire", NULL, NULL, 0, 0, 0},
+  {"dropColumn", "preDropColumn", "postDropColumn", 1, 0, 0},
+  {"addNotNullCheck", "preAddNotNullCheck", "postAddNotNullCheck", 1, 0, 0},
+  {"validate", "preValidate", "postValidate", 1, 0, 0},
+  {"setNotNull", "preSetNotNull", "postSetNotNull", 1, 0, 0},
+  {"dropCheck", "preDropCheck", "postDropCheck", 1, 0, 0},
+  {"createIndexConcurrently", "preCreateIndex", NULL, 1, 0, 0}
 };
 
 static const char *const APP_WORDS[3] = {"reads", "writes", "inserts"};
@@ -3532,7 +3534,7 @@ static int fm_step_refuse(Checker *c, const Cogen *g, const Decl *d, size_t i, c
    first false boolAnd conjunct of the pre clause, its parameters replaced
    by the arguments, gives REFUSE_STEP_INDEX. */
 static int fm_step_pre(Checker *c, const Cogen *g, const Forms *f, const Decl *d, size_t i, const char *s, const StepForm *sf, const uint32_t *x) {
-  const char *pre = cg_join(g, "pre", sf->post + 4), *name[PRE_MAX], *text[PRE_MAX];
+  const char *pre = sf->pre, *name[PRE_MAX], *text[PRE_MAX];
   const Term *arg[PRE_MAX], *t, *q = NULL;
   const Decl *e;
   const Value *v;
@@ -3953,7 +3955,7 @@ static int check_protocol(Checker *c, const Decl *d) {
     sf[i] = step_form(it->word);
     if (sf[i] == NULL)
       return form_unknown(c, it->word, it->line, it->col);
-    xi[0] = sf[i]->post == NULL ? 0u : form_table(&f, it->names[0].text);
+    xi[0] = sf[i]->pre == NULL ? 0u : form_table(&f, it->names[0].text);
     if (xi[0] == UINT32_MAX)
       return form_unknown(c, it->names[0].text, it->names[0].line, it->names[0].col);
     for (j = 0; j < sf[i]->cols; j++) {
@@ -3985,11 +3987,11 @@ static int check_protocol(Checker *c, const Decl *d) {
     char num[24];
     const char *cur, *lock, *scan;
     const Term *step;
-    if (sf[i]->post != NULL && !fm_step_pre(c, &g, &f, d, i, prev, sf[i], &x[3u * i]))
+    if (sf[i]->pre != NULL && !fm_step_pre(c, &g, &f, d, i, prev, sf[i], &x[3u * i]))
       return 0;
     snprintf(num, sizeof num, "%zu", i + 1u);
     cur = fm_join(&g, d->name, "_", num);
-    step = sf[i]->post == NULL
+    step = sf[i]->pre == NULL
       ? cg_app(&g, cg_app(&g, fm_nm(&g, &f, it->word), cg_var(&g, prev)), fm_name(&g, &it->names[0]))
       : cg_app(&g, fm_step_args(&g, &f, it->word, prev, sf[i], it, &x[3u * i]), fm_var_at(&g, "refl", it->line, it->col));
     if (cur == NULL || !cg_def_origin(&g, ORIGIN_PROGRAM, cur, fm_nm(&g, &f, "State"), sf[i]->post == NULL ? cg_var(&g, prev) : fm_step_args(&g, &f, sf[i]->post, prev, sf[i], it, &x[3u * i])))

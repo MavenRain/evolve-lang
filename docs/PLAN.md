@@ -305,16 +305,19 @@ get to `REFUSE_DROP_REQUIRED` at the `dropColumn` stage.
 
 ### 5.1 SQL writer (PostgreSQL)
 
-`langc sql FILE PROTOCOL OUTDIR` writes one file per stage,
-`NN-STEP.sql`. Each file:
+`langc sql FILE PROTOCOL OUTDIR` writes `00-setup.sql` (the schema
+`evolve`, its tables and functions) and one file per stage, `NN-STEP.sql`
+(S6, SPEC.md 6.3). Each stage file:
 
-- starts with a comment: the source hash, the `langc` commit and the
-  stage;
-- sets `lock_timeout` for the stage (Q14);
+- starts with a comment: the format version, the source hash and the
+  stage (Q-S6-2 (a));
+- sets `lock_timeout` for the stage (Q14, Q-S6-6 (a));
+- skips the step when the progress ledger has the stage (Q-S6-18 (a));
 - runs the guards of the stage first (4.5): a `DO` block that raises
-  `EVOLVE_GUARD FACT` when a fact fails;
-- updates the progress ledger `evolve_progress` and, for deploy and retire,
-  the version registry `evolve_app_versions`.
+  `EVOLVE_GUARD FACT` when a fact fails (Q-S6-21 (a));
+- updates the progress ledger `evolve.progress` and, for deploy and
+  retire, the version registry `evolve.app_versions` (Q-S6-3 (a), Q-S6-4
+  (a)).
 
 Lock and scan facts. Each was checked on 2026-10-25 against the PostgreSQL
 18.6 docs (`sql-altertable.html`, `explicit-locking.html`,
@@ -326,7 +329,7 @@ Lock and scan facts. Each was checked on 2026-10-25 against the PostgreSQL
 | `addColumn` | `ADD COLUMN` with no default, nullable | ACCESS EXCLUSIVE (the ALTER TABLE default) | metadata: "In neither case is a rewrite of the table required" |
 | `installSync` | `CREATE TRIGGER` | SHARE ROW EXCLUSIVE | metadata |
 | `dropSync` | `DROP TRIGGER` | ACCESS EXCLUSIVE (F-U0-2 (a); see the DROP TRIGGER note below) | metadata |
-| `backfill` | `CALL evolve_backfill_...()`: a PL/pgSQL procedure that updates one key range, writes the ledger and commits, then goes to the next range | ROW EXCLUSIVE and row locks per batch | batched |
+| `backfill` | `CALL "evolve_P_NN_fill"()` (Q-S6-7 (a), Q-S6-11 (a)): a PL/pgSQL procedure that updates one key range, writes the ledger and commits, then goes to the next range | ROW EXCLUSIVE and row locks per batch | batched |
 | `dropColumn` | `DROP COLUMN` | ACCESS EXCLUSIVE | metadata: the column becomes invisible, no rewrite |
 | `addNotNullCheck` | `ADD CONSTRAINT ... CHECK (c IS NOT NULL) NOT VALID` | ACCESS EXCLUSIVE | metadata: NOT VALID skips the scan |
 | `validate` | `VALIDATE CONSTRAINT` | SHARE UPDATE EXCLUSIVE (does not conflict with ROW EXCLUSIVE or ACCESS SHARE) | scan |
@@ -338,7 +341,8 @@ Lock and scan facts. Each was checked on 2026-10-25 against the PostgreSQL
 The domain gives these rows as `lockOf` and `scanOf` (S4, Q-S4-6 (a)), one
 case for each `Step` constructor. `setNotNull` is `scan` when the CHECK of
 the column is not `valid` in the source state, else `metadata`.
-`createIndexConcurrently` is S6 (Q11); `Step` has no constructor for it.
+`createIndexConcurrently` is the 12th `Step` constructor (S6, Q11,
+Q-S6-10 (a)): `lockOf` gives `shareUpdateExclusive` and `scanOf` `scan`.
 
 Other confirmed facts: `lock_timeout` aborts a statement that waits longer
 than the limit for a lock, and "applies separately to each lock
@@ -360,9 +364,10 @@ the stronger lock (F-U0-2 (a)). `dropSync` is `metadata`, so J5 does not
 refuse it with either lock.
 
 The offline gate compares the emitted files with golden files in
-`test/sql/`. `make check-pg` (optional, not in `make check`) runs the stages
-against a Docker PostgreSQL with two client loops that act as `v1` and
-`v3`.
+`test/sql/` (S6, Q-S6-13 (a)). The planned `make check-pg` (optional, not
+in `make check`) runs the stages against a Docker PostgreSQL with two
+client loops that act as `v1` and `v3`. S6 does not have it (Q-S6-14 (a),
+O19).
 
 ### 5.2 JSON compatibility report
 
@@ -434,10 +439,18 @@ associativity by `fold`. L1, L4 and L6 are the domain decisions `accepts`,
 `dropSafe` and `lockSafe` (`domain/domain.lang`). A program proves a
 decision on its protocol by `refl`: `examples/rename.lang` has
 `stageSoundProof`, `dropSoundProof` and `lockSoundProof`, and
-`test/eval/checker.lang` proves the three decisions on each of the 11 step
-forms (33 proofs). `accepts` and `dropSafe` take the live set of each stage
+`test/eval/checker.lang` proves the three decisions on each of the 12 step
+forms (36 proofs). `accepts` and `dropSafe` take the live set of each stage
 as an argument, as the C driver makes it from the `deploy` and `retire`
-steps (Q-S4-16 (a)). L2 and L3 are S6.
+steps (Q-S4-16 (a)). S6 states L2 and L3 (Q-S6-12 (a)) in
+`test/eval/backfill-laws.lang`, on the rename protocol over a table model
+of 10 rows. L2 is the decisions `twiceOnce` and `resumed`, and
+`ledgerBisim` (the plan from the ledger point is bisimilar to the tail of
+the full plan). L3 is the decisions `writeKeep`, `rowsAfter` and
+`readsMove`, and `movesRead` (the `ua` transport for each row). Each is
+proved by `refl`. `StreamBisim` is a program definition, the pointwise
+form: the CC rule refuses an indexed cofamily. The broken models
+`addTwice`, `skipResume`, `writeNoSync` and `lateFill` give `false`.
 
 ### 6.2 Outside the denotation
 
@@ -500,7 +513,7 @@ on the new checks, docs, close (stage, commit message, next prompt).
 | S3 | domain: `ColType`, `Null`, `CState`, `State`, `App`, the steps, `Step`, `Chain`; the `table`, `app` and `protocol` forms (Q9); `REFUSE_STEP_INDEX`, `REFUSE_RENAME_INPLACE` | one test per step index; mutants on each precondition. DONE. Measured 2026-10-28: `make check` EXIT 0: examples 11; parse refusals 10; check refusals 71; evals 83; ir 11; wasm 15; differential 889 cases, 0 mismatches; fmt 134 canonical, 7 non-canonical pairs; json 32 fixtures, diagnostics 45 codes (30 with a fixture, 15 with no fixture); cubical 50 checks, 29 round trips. U0: the eliminator over indexed families, `fold` with a motive (Op `OP_ELIM_FAMILY`, Ops 50 to 51), `data Walk`. U1: the domain in `domain/domain.lang` (`ColType`, `Null`, `CState`, `State`, `App`, 9 pre and 9 post functions, `Step`, `Chain`, `compose`, `length`, `Stage`), no `nil` row (Q-S3-7 (a)). U2: the `table`, `app` and `protocol` forms (Q-S3-22 to Q-S3-27). U3: J1, the step words and the codes `REFUSE_STEP_INDEX` and `REFUSE_RENAME_INPLACE` (Q-S3-28 to Q-S3-30). U4: one `test/check` file for each pre, `rename-inplace.lang`, `test/eval/steps.lang`. U5: the docs (SPEC.md sections 5 and 6, Q-S3-31 (a); `docs/STATUS.md` S2e and S3, Q-S3-8 (a)). 10 mutants KILLED of 10: M1 to M9 set one pre to `true` (the `test/check/step-*.lang` file of that pre), M10 removes the rename refusal of `check_protocol` (`test/check/rename-inplace.lang`); also M-U0-1 to M-U0-5 KILLED (docs/STATUS.md, S3) |
 | S4 | the checker: `compat`, `fresh`, `segments`, J4, J5, the codes of 4.4; `examples/rename` GREEN and the drop-early variant refused (the demo); L1, L4, L5, L6 | one test per code with its JSON shape; mutants on each judgement. DONE. Measured 2026-10-28: `make check` EXIT 0: examples 12; parse refusals 10; check refusals 79; evals 185; ir 12; wasm 16; differential 892 cases, 0 mismatches; fmt 153 canonical, 7 non-canonical pairs; json 38 fixtures, diagnostics 51 codes (36 with a fixture, 15 with no fixture); cubical 52 checks, 29 round trips. U0: the 9th `State` field `link`, `Code`, `Fact` (only `backfillDone`), `Verdict`, `LockMode`, `ScanClass`, `lockOf` and `scanOf` (Q-S4-3, Q-S4-4, Q-S4-6 (a), F-U0-2). U1: J2 (`compat`, J2.1 to J2.4), `fresh`, `segments`, the live set, the ℕ-indexed `Cols` and `Live` (Q-S4-2, Q-S4-8 to Q-S4-12 (a)). U2: J4 and J5 in `check_protocol`, the 6 codes of 4.4 with 6 json fixtures and 7 `test/check/j4-*.lang` files (Q-S4-1, Q-S4-5, Q-S4-13, Q-S4-14 (a)). U3: `examples/rename.lang` GREEN and `test/check/rename-drop-early.lang` refused (`REFUSE_STALE_READ` at stage 5). U4: L5 (`test/eval/chain-laws.lang`); L1, L4 and L6 as the decisions `accepts`, `dropSafe` and `lockSafe`, by `refl` (Q-S4-7, Q-S4-15, Q-S4-16 (a)). U5: the docs (SPEC.md sections 5 and 6; PLAN 2.2, 4.6, 5.1 and 6.1; `docs/STATUS.md` S4; `README.md`). 9 mutants KILLED of 9: M1 to M4 set one J2 clause to `true`, M5 removes the drop-required refusal, M6 changes the scan class of `setNotNull`, M7 makes `addColumn` a barrier, M8 changes the J4 first-code order, M9 changes the `runtime` phase (docs/STATUS.md, S4) |
 | S5 | JSON report (port of `json.c`), `Fact`, `Guard`, runtime rows | golden reports; mutants on the verdict map: 6 golden reports (`test/report/`, Q-S5-7 (a)); 11 mutants KILLED of 11: M1 to M3 change one cell verdict, M4 inverts `live`, M5 loses the last guard fact, M6 joins two segments, M7 writes `fix` as `code`, M8 swaps the app and the stage of a matrix row, M9 swaps the `backfillDone` fields, M10 moves `fleetAt` one stage, M11 removes `retired` from `stageGuard` (docs/STATUS.md, S5) |
-| S6 | SQL writer: stage files, `lock_timeout`, guards, ledger, backfill procedure, sync triggers, the CHECK path, `createIndexConcurrently` (Q11); L2, L3; `make check-pg` (optional) | golden SQL files; mutants on lock and guard output |
+| S6 | SQL writer: stage files, `lock_timeout`, guards, ledger, backfill procedure, sync triggers, the CHECK path, `createIndexConcurrently` (Q11); L2, L3; `make check-pg` (optional) | golden SQL files; mutants on lock and guard output. DONE. Measured 2026-10-30: `make check` EXIT 0: examples 12; parse refusals 11; check refusals 80; evals 218; ir 12; wasm 16; differential 892 cases, 0 mismatches; fmt 165 canonical, 8 non-canonical pairs; json 38 fixtures, diagnostics 52 codes (36 with a fixture, 16 with no fixture); golden reports 6; sql 9 golden protocols, 53 files; cubical 52 checks, 29 round trips; sql writer regressions 4. U0: the 12th `Step` constructor `createIndexConcurrently`, `preCreateIndex`, `KeyRange` and the `lockTimeout` clause (Q-S6-6, Q-S6-10, Q-S6-12, Q-S6-15 (a)). U1: L2 and L3 in `test/eval/backfill-laws.lang`, 7 `refl` proofs and 4 broken models. U2: `src/sql.c`, `src/sql.h` and the command `langc sql`: `00-setup.sql`, the stage shape and the SQL of the 12 steps, `SQL_NAME_LONG` (Q-S6-1, Q-S6-2, Q-S6-5, Q-S6-11, Q-S6-16 to Q-S6-20 (a)). U3: the tenants, the version registry, the guards, the sync trigger, the backfill procedure, the CHECK path and the INVALID index drop (Q-S6-3, Q-S6-4, Q-S6-7 to Q-S6-9, Q-S6-21, Q-S6-22 (a)). U4: 9 golden protocols with 53 files in `test/sql/` (Q-S6-13, Q-S6-23 to Q-S6-25 (a)). U5: OUTDIR must exist (Q-S6-26 (a)), the mutants and the docs (SPEC.md 6.3; PLAN 5.1, O4, O19; `docs/STATUS.md` S6; `README.md`). No native PostgreSQL server run and no `make check-pg` (Q-S6-14 (a), O19). 8 mutants KILLED of 8: M1 adds 1 to the lock timeout, M2 removes the `fleetAt` DO block, M3 swaps the `backfillDone` columns, M4 moves `fleetAt` one stage, M5 names the wrong app in `retired`, M6 puts a bare stage in a transaction, M7 changes the retry SQLSTATE, M8 lets S win in the sync trigger (docs/STATUS.md, S6) |
 | S7 | Wasm oracle writer | differential gate against `langc eval` |
 | S8 | agent kit: `SKILL.md` with 5 graded examples, `langc mcp`, `explain-code`, final `AGENTS.md` and README table | MCP stdio test; each example passes `check` |
 | S9 | `docs/TOKEN-BASELINE.md` and its script | the script output equals the file |
@@ -517,6 +530,8 @@ on the new checks, docs, close (stage, commit message, next prompt).
 - O4 the PG 18 form `NOT NULL ... NOT VALID`. The 18.6 ALTER TABLE page now
   lists not-null constraints for NOT VALID; the docs bug of 18.4
   (`design/DESIGN.md` section 3) looks fixed. A version-gated form (Q5 RULED (a)).
+  S6 writes the PostgreSQL 15 path only: `CHECK (c IS NOT NULL) NOT VALID`,
+  `VALIDATE`, then `SET NOT NULL` (Q-S6-9 (a)). The PG 18 form stays open.
 - O5 lock queue behavior (a waiting ACCESS EXCLUSIVE request blocks later
   readers) is not stated in `explicit-locking.html`. Confirm from another
   PostgreSQL source before a doc cites it.
@@ -542,6 +557,17 @@ on the new checks, docs, close (stage, commit message, next prompt).
   cells; `Eq` is a dropped name (`NAME_UNKNOWN`, hint `Path A x y`). S2a
   removes the `Prod`, `List`, `unfold` and `filter` Ops (part of O14).
   S2d closes the rest of O14.
+- O19 (2026-10-30) open items from S6 (`docs/STATUS.md`, S6): S6 has no
+  native PostgreSQL server run of the stage files and no `make check-pg`
+  (Q-S6-14 (a)); `psql` is not installed (O2). The gate compares the text
+  of the files with the goldens. The staged review also executed the
+  scripts in PostgreSQL WASM (`docs/STATUS.md`, S6 review). Two doc facts
+  are not cited in 5.1:
+  a procedure that commits cannot run in a block with an EXCEPTION clause
+  (`plpgsql-transactions.html`; the S6 survey planned a U2 check in the 18
+  docs, and no unit did it), and `DROP INDEX CONCURRENTLY` cannot run in
+  a transaction block (`sql-dropindex.html`, read in S6 U3). Confirm and
+  cite them before the first live run.
 
 ## 11. Questions for the USER
 

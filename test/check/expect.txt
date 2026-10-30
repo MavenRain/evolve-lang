@@ -68,6 +68,7 @@ step-add-not-null-check.lang REFUSE_STEP_INDEX isAbsent (check n m s c) is false
 step-validate.lang REFUSE_STEP_INDEX isNotValid (check n m s c) is false
 step-set-not-null.lang REFUSE_STEP_INDEX isNullable (null n m s c) is false
 step-drop-check.lang REFUSE_STEP_INDEX boolNot (isAbsent (check n m s c)) is false
+step-create-index.lang REFUSE_STEP_INDEX inTbl n m s t c is false
 rename-inplace.lang REFUSE_RENAME_INPLACE renames a column in place
 j4-drop-required.lang REFUSE_DROP_REQUIRED retire v1 before stage 5
 j4-missing-column.lang REFUSE_MISSING_COLUMN stage 0: the live version v3

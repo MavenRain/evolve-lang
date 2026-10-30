@@ -291,10 +291,15 @@ static void put_app_form(FmtText *out, const Decl *d) {
   put_str(out, ")");
 }
 
-/* `protocol p where`, then one step a line: `  backfill t c ← c' batch N`. */
+/* `protocol p lockTimeout N where` (no clause when N is 0), then one step a
+   line: `  backfill t c ← c' batch N`. */
 static void put_protocol(FmtText *out, const Decl *d) {
   put_str(out, "protocol ");
   put_str(out, d->name);
+  if (d->lock_timeout != 0) {
+    put_str(out, " lockTimeout ");
+    put_nat(out, d->lock_timeout);
+  }
   put_str(out, " where");
   for (size_t i = 0; i < d->item_count; i++) {
     const FormItem *it = &d->items[i];

@@ -1,0 +1,5 @@
+table users (id : bigint key, email : text)
+
+protocol p where
+  dropColumn users email
+  createIndexConcurrently users email

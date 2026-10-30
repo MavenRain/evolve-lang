@@ -100,6 +100,7 @@ typedef struct {
   size_t ctor_count;
   const FormItem *items; /* a table, app or protocol form */
   size_t item_count;
+  uint64_t lock_timeout; /* a protocol: lockTimeout in ms; 0 = no clause (2000) */
 } Decl;
 
 /* Domain declarations come first, then the program. */

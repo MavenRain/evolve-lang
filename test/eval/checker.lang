@@ -59,6 +59,9 @@ lockSetNotNull = lockOf 3 1 checked (postSetNotNull 3 1 checked usersTbl users_d
 lockDropCheck : LockMode
 lockDropCheck = lockOf 3 1 guarded (postDropCheck 3 1 guarded usersTbl users_display_name) (dropCheck 3 1 guarded usersTbl users_display_name refl)
 
+lockCreateIndex : LockMode
+lockCreateIndex = lockOf 3 1 guarded guarded (createIndexConcurrently 3 1 guarded usersTbl users_display_name refl)
+
 scanAddColumn : ScanClass
 scanAddColumn = scanOf 3 1 base_0 base_1 (addColumn 3 1 base_0 usersTbl users_display_name text refl)
 
@@ -97,6 +100,9 @@ scanSetNotNullNotValid = scanOf 3 1 guarded (postSetNotNull 3 1 guarded usersTbl
 
 scanDropCheck : ScanClass
 scanDropCheck = scanOf 3 1 guarded (postDropCheck 3 1 guarded usersTbl users_display_name) (dropCheck 3 1 guarded usersTbl users_display_name refl)
+
+scanCreateIndex : ScanClass
+scanCreateIndex = scanOf 3 1 guarded guarded (createIndexConcurrently 3 1 guarded usersTbl users_display_name refl)
 
 linkAtStart : Bool
 linkAtStart = link 3 1 base_1 (witness users_name) (witness users_display_name)
@@ -360,6 +366,34 @@ lockSafeDropCheck = lockSafe 3 1 guarded (postDropCheck 3 1 guarded usersTbl use
 
 lockSafeDropCheckProof : Path Bool lockSafeDropCheck true
 lockSafeDropCheckProof = refl
+
+chainCreateIndex : Chain 3 1 guarded guarded
+chainCreateIndex = snoc 3 1 guarded guarded guarded (nil 3 1 guarded) (createIndexConcurrently 3 1 guarded usersTbl users_display_name refl)
+
+acceptsCreateIndex : Bool
+acceptsCreateIndex = accepts 3 1 guarded guarded chainCreateIndex liveV0 programCols
+
+acceptsCreateIndexProof : Path Bool acceptsCreateIndex true
+acceptsCreateIndexProof = refl
+
+dropSafeCreateIndex : Bool
+dropSafeCreateIndex = dropSafe 3 1 guarded guarded chainCreateIndex liveV0
+
+dropSafeCreateIndexProof : Path Bool dropSafeCreateIndex true
+dropSafeCreateIndexProof = refl
+
+lockSafeCreateIndex : Bool
+lockSafeCreateIndex = lockSafe 3 1 guarded guarded chainCreateIndex
+
+lockSafeCreateIndexProof : Path Bool lockSafeCreateIndex true
+lockSafeCreateIndexProof = refl
+
+-- One backfill batch: the keys 1 to 100 (Q-S6-12 (a)).
+batchOne : KeyRange
+batchOne = pack 1 100
+
+batchOneHi : ℕ
+batchOneHi = payload batchOne
 
 -- A negative case: setNotNull at base_1 has no valid CHECK, so it scans
 -- under ACCESS EXCLUSIVE, and `lockSafe` gives false.

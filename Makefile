@@ -5,9 +5,9 @@ CFLAGS = -std=c99 -Wall -Werror -Isrc
 CLANG_FLAGS = -std=c99 -Wall -Wextra -Wswitch-enum -Werror -fsyntax-only -Isrc
 FRONT = src/front/base.c src/front/lexer.c src/front/parser.c src/front/fmt.c src/front/front.c src/front/eval.c src/front/check.c src/front/lower.c
 TARGET = src/wasm.c
-SRC = src/main.c src/json.c $(FRONT) $(TARGET)
+SRC = src/main.c src/json.c src/sql.c $(FRONT) $(TARGET)
 FRONT_TOOL = test/fronttool.c $(filter-out src/front/front.c src/front/lower.c,$(FRONT))
-CUBICAL_TOOL = test/cubical.c src/json.c $(filter-out src/front/lower.c,$(FRONT))
+CUBICAL_TOOL = test/cubical.c src/json.c src/sql.c $(filter-out src/front/lower.c,$(FRONT))
 HEADERS = $(wildcard src/*.h src/front/*.h)
 
 .PHONY: build check check-clang clean
@@ -35,18 +35,23 @@ build/diagnostics: test/diagnostics.c $(SRC) $(HEADERS) build/domain.c build/pre
 build/cubical: $(CUBICAL_TOOL) $(HEADERS) build/domain.c build/prelude.c
 	$(TCC) $(CFLAGS) -o build/cubical $(CUBICAL_TOOL) build/domain.c build/prelude.c
 
+build/sql-writer: test/sql-writer.c $(SRC) $(HEADERS) build/domain.c build/prelude.c
+	$(TCC) $(CFLAGS) -o build/sql-writer test/sql-writer.c $(filter-out src/main.c,$(SRC)) build/domain.c build/prelude.c
+
 check-clang: build/domain.c build/prelude.c
 	$(CC) $(CLANG_FLAGS) $(SRC) build/domain.c build/prelude.c
 	$(CC) $(CLANG_FLAGS) $(FRONT_TOOL)
 	$(CC) $(CLANG_FLAGS) test/diagnostics.c $(filter-out src/main.c,$(SRC)) build/domain.c build/prelude.c
 	$(CC) $(CLANG_FLAGS) $(CUBICAL_TOOL) build/domain.c build/prelude.c
+	$(CC) $(CLANG_FLAGS) test/sql-writer.c $(filter-out src/main.c,$(SRC)) build/domain.c build/prelude.c
 
-check: build/langc build/fronttool build/diagnostics build/cubical check-clang
+check: build/langc build/fronttool build/diagnostics build/cubical build/sql-writer check-clang
 	sh test/gate.sh
 	sh test/review.sh
 	build/fronttool
 	build/diagnostics
 	build/cubical
+	build/sql-writer
 
 clean:
 	rm -rf build

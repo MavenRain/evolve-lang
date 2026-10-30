@@ -1,0 +1,11 @@
+-- Sync pairs can be dropped in either order. A key can have the same name
+-- as a local of the backfill procedure.
+table users (evolve_last_key : bigint key, name : text)
+
+protocol edges where
+  addColumn users full text
+  installSync users full name
+  backfill users full ← name batch 1
+  dropSync users name full
+  installSync users name full
+  dropSync users full name

@@ -1,0 +1,17 @@
+-- A golden SQL protocol (S6 U4): the rename protocol of examples/rename.lang
+-- with a name of 48 bytes, the longest name that SQL_NAME_LONG accepts. The
+-- longest generated name has 15 + 48 = 63 bytes.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.name, reads users.id, writes users.name, inserts users.id, inserts users.name)
+
+app v3 (reads users.display_name, reads users.id, writes users.display_name, inserts users.id, inserts users.display_name)
+
+protocol long_name_of_forty_eight_bytes_for_sql_name_long where
+  addColumn users display_name text
+  installSync users display_name name
+  backfill users display_name ← name batch 1000
+  deploy v3
+  retire v1
+  dropSync users display_name name
+  dropColumn users name

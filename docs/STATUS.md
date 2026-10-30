@@ -989,3 +989,160 @@ failed on the original staged implementation and pass with these fixes.
 - Q-S5-1 to Q-S5-11 are RULED (a) (USER 2026-10-29). Q-S2b-1 to Q-S2b-8
   stay open (PLAN section 11).
 - The `guard` text is the PLAN 4.5 sentence. S6 writes the SQL guards.
+
+## S6: the SQL protocol writer (`langc sql`)
+
+S6 adds the PostgreSQL target. `langc sql PROG PROTOCOL OUTDIR` checks the
+program and writes `00-setup.sql` and one `NN-WORD.sql` file for each stage
+of the protocol (PLAN 5.1). The files keep a progress ledger for each
+tenant, run the guards of `stageGuard` as SQL, and set `lock_timeout` for
+each stage. The domain gets the 12th step `createIndexConcurrently`, and
+the laws L2 and L3 get proofs. SPEC.md 6.3 gives the protocol.
+
+### Source
+- No port. `src/sql.c` (603 lines) and `src/sql.h` are new. The writer
+  uses the S5 `JsonOut` buffer (`src/json.h`). S6 changes 18 files and
+  adds 63 files. It removes no file.
+
+### Units
+- U0, the domain and the clause: `domain/domain.lang` adds
+  `preCreateIndex` and the 12th `Step` constructor
+  `createIndexConcurrently` (the target is the source), with a case in
+  `lockOf` (`shareUpdateExclusive`), `scanOf` (`scan`), `isBarrier`,
+  `fillsCol` and `dropHits` (Q-S6-10 (a)). It also adds `KeyRange = ℕ ×
+  ℕ` (Q-S6-12 (a)). The parser reads the step word and the clause
+  `lockTimeout NAT`: 1 to 2147483647, else `PARSE_EXPECT`; with no
+  clause, 2000 ms (Q-S6-6 (a), Q-S6-15 (a)). `langc fmt` keeps the
+  clause. New tests: `test/check/step-create-index.lang`,
+  `test/parse/lock-timeout-zero.lang`, the fmt pair
+  `test/fmt/protocol.lang` and `protocol.canon`, and 3 proofs in
+  `test/eval/checker.lang`.
+- U1, the backfill laws: `test/eval/backfill-laws.lang` (Q-S6-12 (a)).
+  `StreamBisim` is a program definition, because the CC rule refuses a
+  cofamily with a value parameter. The table model has 10 sampled rows.
+  L2: `twiceOnce` and `resumed`. L3: `writeKeep`, `rowsAfter` and the
+  `ua` part (`movesRead`, `readsMove`). 7 `refl` proofs and 4 broken
+  models.
+- U2, the writer: `src/sql.c`, `src/sql.h`, the command `sql` in
+  `src/main.c` and the code `SQL_NAME_LONG` (Q-S6-16 (a)). The writer
+  makes `00-setup.sql` (Q-S6-1 (a)) with `evolve.progress`,
+  `evolve.stage_done` and the `evolve.ddl` retry on `55P03`, 5 tries in
+  all (Q-S6-5 (a), Q-S6-17 (a)). Each stage file gets the header (Q-S6-2
+  (a)), the transaction shape and `lock_timeout` (Q-S6-6 (a)), the `\if`
+  skip (Q-S6-18 (a)) and the SQL of its step, with quoted
+  `evolve_P_NN_KIND` names (Q-S6-11 (a)). New texts: the `USAGE` text of
+  `sql` (Q-S6-20 (a)) and the `INTERNAL` text for a stage with no step
+  SQL (Q-S6-19 (a)).
+- U3, the seams: the tenants table and row, the backfill table and the
+  version registry with `seen_at` (Q-S6-3 (a), Q-S6-4 (a)); the guard
+  `DO` blocks for `fleetAt`, `retired` and `backfillDone` (Q-S6-21 (a),
+  Q-S6-22 (a)); the sync trigger, where C wins (Q-S6-8 (a)); the keyset
+  backfill procedure (Q-S6-7 (a)); the CHECK path on PostgreSQL 15 only
+  (Q-S6-9 (a)); the drop of an INVALID index (Q-S6-10 (a)). New
+  regressions in `test/cubical.c`: 4 cases (`sql_put_quoted`,
+  `sql_name`).
+- U4, the goldens: `test/sql/ix.lang`, `lt.lang` and
+  `long_name_of_forty_eight_bytes_for_sql_name_long.lang`, and 53 golden
+  files in 9 directories `test/sql/NAME/` (Q-S6-13 (a), Q-S6-25 (a)). The
+  procedure variables get the `evolve_` prefix (Q-S6-23 (a)), and the
+  guards keep `IF NOT (COND)` (Q-S6-24 (a)). `test/gate.sh` checks the
+  files and prints `sql: 9 golden protocols, 53 files`.
+- U5, the mutants and the docs: OUTDIR must exist, else `IO` (Q-S6-26
+  (a)). SPEC.md 6.3; PLAN 5.1, O4, O19 and the S6 row; the `README.md`
+  status; this section.
+
+### Gate counts against S5
+
+| Count | S5 (550e73b) | S6 |
+|---|---|---|
+| examples | 12 | 12 |
+| parse refusals | 10 | 11 |
+| check refusals | 79 | 80 |
+| evals | 202 | 218 |
+| ir lowered | 12 | 12 |
+| wasm modules | 16 | 16 |
+| differential cases (0 mismatches) | 892 | 892 |
+| fmt canonical, non-canonical pairs | 159, 7 | 165, 8 |
+| json fixtures | 38 | 38 |
+| diagnostics codes (fixture, no fixture) | 51 (36, 15) | 52 (36, 16) |
+| golden reports | 6 | 6 |
+| golden SQL protocols, files | none | 9, 53 |
+| cubical checks, round trips | 52, 29 | 52, 29 |
+| json writer regressions | 21 | 21 |
+| report guard regressions | 4 | 4 |
+| sql writer regressions | none | 4 |
+
+The gate has 0 failures. The review, domain and diagnostic edit
+regressions pass.
+
+### Op values
+51 Op values. S6 adds no Op. `src/front/eval.c` and the kernel do not
+change.
+
+### Mutants
+Each mutant makes one change in `src/sql.c`, then `make -B` and the golden
+SQL loop run on a copy of `test/sql/`. These 8 mutants are all KILLED.
+Each FAIL line is a file text FAIL; no mutant changes the file names.
+
+| Mutant | Site | Result |
+|---|---|---|
+| M1 | `put_stage`: the lock timeout is one more (`'2001ms'`) | KILLED by each stage file of the 9 protocols (44 files) |
+| M2 | `seam_guard`: no `DO` block for a `fleetAt` guard | KILLED by fleet, long_name, lt, order, rename and strict (15 files) |
+| M3 | `guard_backfill_done`: the C and S columns swap | KILLED by long_name, lt, order and rename (4 files) |
+| M4 | `guard_fleet_at`: the stage of `fleetAt` is one more | KILLED by the 15 files of M2 |
+| M5 | `guard_retired`: the guard reads the app `v3` | KILLED by fleet, long_name, lt, order, rename and strict (16 files) |
+| M6 | `put_stage`: a bare stage gets `BEGIN`, `SET LOCAL` and `COMMIT` | KILLED by ix, long_name, lt, order, rename and strict (6 files) |
+| M7 | `SETUP_SQL`: the retry SQLSTATE is `55P02` | KILLED by each `00-setup.sql` (9 files) |
+| M8 | `seam_sync_function`: the trigger tests S first, so S wins | KILLED by long_name, lt and rename (3 files) |
+
+### Open items from S6
+- Q-S6-1 to Q-S6-26 are RULED (a) (USER 2026-10-29 and 2026-10-30).
+  Q-S2b-1 to Q-S2b-8 stay open (PLAN section 11).
+- No native PostgreSQL server run of the files and no `make check-pg`
+  (Q-S6-14 (a), PLAN O19). The gate compares the text of the files; the
+  staged review also executed the SQL in PostgreSQL WASM, below.
+- The PostgreSQL 18 form `NOT NULL ... NOT VALID` (Q-S6-9 (a), PLAN O4).
+- Two doc facts of the backfill and index stages are not cited in PLAN
+  5.1 (PLAN O19).
+- Each app instance must write `seen_at` (Q-S6-4 (a)). The writer does
+  not make this code, and no test checks it.
+### S6 review (2026-10-30)
+
+Reviewed all 81 originally staged paths. Fixed seven findings:
+
+- CRITICAL: a tenant identifier over 63 bytes could select another
+  tenant's schema while recording progress under its full text. Every
+  file now requires an exact existing schema name before any write.
+- MEDIUM: temporary tables could receive a tenant's migration. The
+  explicit search order keeps catalog built-ins first and the tenant
+  ahead of temporary tables. Each table step
+  verifies resolution against the exact tenant schema before its guards.
+- MEDIUM: a same-named index on the wrong column could satisfy a stage.
+  Index cleanup and completion now check the table, column, btree options
+  and definition. Completion also requires a valid, ready, live index.
+- MEDIUM: a key named `evolve_last_key` made the backfill ambiguous.
+  The cursor has a block qualification and key references have aliases.
+- MEDIUM: reversed `dropSync` arguments missed the installed trigger.
+  Origin lookup now follows the domain's symmetric pair semantics.
+- MEDIUM: long table and column identifiers were silently truncated.
+  The writer now refuses them before writing any file, including a
+  backfill's declared key. Registry text values retain their full names.
+- MEDIUM: 100-stage protocols emitted `000-setup.sql`. Setup keeps its
+  advertised `00-setup.sql` name independently of stage-number width.
+
+Validation: full `make check` passed with 0 failures, 166 canonical
+fixtures, 10 SQL protocols and 60 golden SQL files. The new C executable
+`test/sql-writer.c` adds 13 protocol regressions to the gate. The original
+writer failed its long table, column, key and setup-filename checks.
+`test/sql/edges.lang` covers the colliding key and reversed sync pairs.
+
+Exploratory PostgreSQL WASM execution (PGlite 0.5.13) completed all ten
+golden protocols twice. Eighteen additional executions checked exact and
+overlong tenants, missing schemas and tables, temporary-table shadowing,
+multi-batch copying, matching and mismatched index definitions, and
+INVALID-index recovery, catalog built-in precedence and tenant routine
+placement. Rejected cases preserved the original objects
+and did not record the rejected stage. This does not replace a native
+PostgreSQL server run or concurrent-client validation (`PLAN` O19).
+
+No CI weakening and no unresolved findings from this review.

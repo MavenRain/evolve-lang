@@ -9,6 +9,7 @@
 #include "front/lower.h"
 #include "front/parser.h"
 #include "json.h"
+#include "sql.h"
 #include "target.h"
 
 #define ARENA_LIMIT_BYTES ((size_t)1 << 30)
@@ -22,7 +23,8 @@ typedef enum {
   CMD_IR,
   CMD_ABI,
   CMD_BUILD,
-  CMD_FMT
+  CMD_FMT,
+  CMD_SQL
 } Command;
 
 typedef struct {
@@ -48,6 +50,7 @@ static const struct {
   {"abi", CMD_ABI},
   {"build", CMD_BUILD},
   {"fmt", CMD_FMT},
+  {"sql", CMD_SQL},
 };
 
 static int usage(FILE *err) {
@@ -57,7 +60,8 @@ static int usage(FILE *err) {
         "       langc ir PROG\n"
         "       langc abi PROG\n"
         "       langc build PROG -o OUT [--runtime]\n"
-        "       langc fmt PROG\n", err);
+        "       langc fmt PROG\n"
+        "       langc sql PROG PROTOCOL OUTDIR\n", err);
   return 2;
 }
 
@@ -100,6 +104,11 @@ static int parse_options(int argc, char **argv, Options *opt, Diag *diag) {
     case CMD_REPORT:
       if (argc != 4) return diag_fail(diag, "USAGE", NULL, "report needs a program path and a protocol name");
       opt->protocol = argv[3];
+      return 1;
+    case CMD_SQL:
+      if (argc != 5) return diag_fail(diag, "USAGE", NULL, "sql needs a program path, a protocol name and a directory");
+      opt->protocol = argv[3];
+      opt->out_path = argv[4];
       return 1;
     case CMD_EVAL:
       if (argc < 4) return diag_fail(diag, "USAGE", NULL, "eval needs a definition name");
@@ -147,6 +156,7 @@ static int run_target(const Options *opt, Machine *machine, Diag *diag) {
     case CMD_EVAL:
     case CMD_BUILD:
     case CMD_FMT:
+    case CMD_SQL:
       break;
   }
   out = fopen(opt->out_path, "wb");
@@ -172,6 +182,7 @@ static int run(const Options *opt, Arena *arena, Diag *diag) {
     case CMD_ABI:
     case CMD_BUILD:
     case CMD_FMT: /* run_fmt does fmt */
+    case CMD_SQL: /* run_sql does sql */
       break;
   }
   return run_target(opt, &machine, diag);
@@ -359,6 +370,23 @@ static int run_report(const Options *opt, Arena *arena, Diag *diag) {
   return 0;
 }
 
+/* `sql`: the psql scripts of the protocol OPT->protocol in the directory
+   OPT->out_path (sql.h). A program that is not checked gives the `check`
+   text diagnostics (exit 1, or 2 when it cannot be read). A program with no
+   such protocol is a usage error (exit 2). stdout stays empty. */
+static int run_sql(const Options *opt, Arena *arena, Diag *diag) {
+  Report report;
+  memset(&report, 0, sizeof report);
+  report.protocol = opt->protocol;
+  Checked c;
+  check_source(opt, arena, diag, &report, &c);
+  int found = c.typed && (report.found || diag_fail(diag, "USAGE", NULL, "%s has no protocol %s", opt->prog_path, opt->protocol));
+  int status = !c.typed ? (c.loaded ? 1 : 2) : !found ? 2 : sql_write(arena, diag, &c.front.decls, &report, c.text, c.len, opt->out_path);
+  if (diag->set) diag_print(diag, stderr);
+  if (c.warn.set) diag_print(&c.warn, stderr);
+  return status;
+}
+
 /* Lexes and parses the program only (no domain, no check), then prints the
    canonical text. */
 static int run_fmt(const Options *opt, Arena *arena, Diag *diag) {
@@ -392,9 +420,10 @@ int main(int argc, char **argv) {
   int status = opt.command == CMD_FMT      ? run_fmt(&opt, &arena, &diag)
                : opt.command == CMD_CHECK  ? run_check(&opt, &arena, &diag)
                : opt.command == CMD_REPORT ? run_report(&opt, &arena, &diag)
+               : opt.command == CMD_SQL    ? run_sql(&opt, &arena, &diag)
                                            : run(&opt, &arena, &diag);
   arena_release(&arena);
-  /* run_check and run_report print their own diagnostics. */
-  if (status != 0 && diag.set && opt.command != CMD_CHECK && opt.command != CMD_REPORT) diag_print(&diag, stderr);
+  /* run_check, run_report and run_sql print their own diagnostics. */
+  if (status != 0 && diag.set && opt.command != CMD_CHECK && opt.command != CMD_REPORT && opt.command != CMD_SQL) diag_print(&diag, stderr);
   return status;
 }

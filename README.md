@@ -29,15 +29,20 @@ compatibility checker: J2 (`compat`), J4 and J5, the codes of
 `docs/PLAN.md` 4.4, the demo `examples/rename.lang` and the laws L1, L4,
 L5 and L6. S5 adds the runtime obligations (`Guard`, `stageGuard`) and
 the JSON compatibility report `langc report FILE PROTOCOL` (`SPEC.md` 6.2).
-There is no SQL writer yet. `make check` passes.
+S6 adds the step `createIndexConcurrently`, the laws L2 and L3, and the
+SQL writer `langc sql PROG PROTOCOL OUTDIR` (`SPEC.md` 6.3): one
+PostgreSQL file for each stage, with `lock_timeout`, the guards and the
+progress ledger. `make check` passes.
 `docs/PLAN.md` section 9 gives the slices, and `docs/STATUS.md` gives the state.
 
 evolve-lang does not promise zero downtime. The checker proves
 compatibility facts about the declared model only. Lock wait time, traffic,
 long transactions, replication lag, trigger cost, disk space and whether
 the application code matches its declared requirements are outside the
-model (`docs/PLAN.md` 6.2). The planned SQL writer adds runtime checks for
-some of these facts.
+model (`docs/PLAN.md` 6.2). The SQL writer adds runtime checks for some
+of these facts: the guards of each stage and `lock_timeout`. The staged
+review executed the SQL in PostgreSQL WASM (`docs/STATUS.md`, S6 review).
+A native PostgreSQL server run is still open (`docs/PLAN.md` O19).
 
 ## When to use evolve-lang
 

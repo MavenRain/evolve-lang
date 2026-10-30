@@ -872,6 +872,7 @@ static const struct {
   {"addColumn", 3}, {"installSync", 3}, {"dropSync", 3},     {"backfill", 3},
   {"deploy", 1},    {"retire", 1},      {"dropColumn", 2},   {"addNotNullCheck", 2},
   {"validate", 2},  {"setNotNull", 2},  {"dropCheck", 2},    {"renameColumn", 3},
+  {"createIndexConcurrently", 2},
 };
 
 /* `deploy a` and `retire a` name an app; `addColumn t c ty` names a type
@@ -912,9 +913,22 @@ static int parse_step(Parser *p, FormItem *it, int column) {
   return ok;
 }
 
-/* `protocol NAME where`, then one step a line at one column. */
+/* `lockTimeout N` in milliseconds, from 1 to 2147483647 (Q-S6-6 (a),
+   Q-S6-15 (a)). With no clause the field stays 0 (the 2000 ms default). */
+static int parse_lock_timeout(Parser *p, Decl *d) {
+  if (!at_word(p, "lockTimeout")) return 1;
+  bump(p);
+  if (!at(p, TOK_NAT)) return fail_at(p, cur(p), "a Nat literal");
+  if (cur(p)->nat == 0 || cur(p)->nat > 2147483647u) return fail_at(p, cur(p), "a lock timeout from 1 to 2147483647");
+  d->lock_timeout = cur(p)->nat;
+  bump(p);
+  return 1;
+}
+
+/* `protocol NAME (lockTimeout N)? where`, then one step a line at one
+   column. */
 static int parse_protocol(Parser *p, Decl *d) {
-  if (!parse_form_head(p, d, DECL_PROTOCOL, "a protocol name") || !expect(p, TOK_KW_WHERE, "'where'")) return 0;
+  if (!parse_form_head(p, d, DECL_PROTOCOL, "a protocol name") || !parse_lock_timeout(p, d) || !expect(p, TOK_KW_WHERE, "'where'")) return 0;
   if (!at(p, TOK_IDENT) || !first_on_line(p)) return fail_at(p, cur(p), "a step on a new indented line");
   int column = cur(p)->col;
   FormItem *items = NULL;

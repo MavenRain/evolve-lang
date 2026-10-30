@@ -199,7 +199,7 @@ same_dump() {
     cmp -s "$tmp/d1.txt" "$tmp/d2.txt"
 }
 canon=0
-for f in domain/domain.lang examples/*.lang test/check/*.lang test/eval/*.lang test/ir/*.lang test/json/*.lang test/report/*.lang test/fmt/*.canon; do
+for f in domain/domain.lang examples/*.lang test/check/*.lang test/eval/*.lang test/ir/*.lang test/json/*.lang test/report/*.lang test/sql/*.lang test/fmt/*.canon; do
   case "$f" in
     test/json/LEX_*.lang | test/json/PARSE_*.lang | test/json/W_NONCANON.lang) continue ;;
   esac
@@ -265,7 +265,7 @@ done
 # docs/DIAGNOSTICS.md has one row for each code in src/. Each code has
 # test/json/CODE.lang (its first JSON line has that code), or its row gives
 # "no fixture:" and a reason; not the two.
-rg -o -I -N -r '$1$2$3' '"((?:LEX|PARSE|REFUSE|TYPE|NAME|EVAL|DOMAIN|GLUE|UNGLUE|W)_[A-Z_]+)"|"(OOM|IO|IO_SIZE|USAGE|INTERNAL)"|langc: ((?:EVAL|REFUSE|TYPE)_[A-Z_]+):' src |
+rg -o -I -N -r '$1$2$3' '"((?:LEX|PARSE|REFUSE|TYPE|NAME|EVAL|DOMAIN|GLUE|UNGLUE|SQL|W)_[A-Z_]+)"|"(OOM|IO|IO_SIZE|USAGE|INTERNAL)"|langc: ((?:EVAL|REFUSE|TYPE)_[A-Z_]+):' src |
   LC_ALL=C sort -u >"$tmp/src-codes.txt"
 rg -o -N -r '$1' '^\| `([A-Z_]+)` \|' docs/DIAGNOSTICS.md | LC_ALL=C sort -u >"$tmp/doc-codes.txt"
 if ! cmp -s "$tmp/src-codes.txt" "$tmp/doc-codes.txt"; then
@@ -320,6 +320,45 @@ for want in $(printf '%s\n' test/report/*.json | LC_ALL=C sort); do
   fi
 done
 echo "report: $reports golden reports"
+
+# Golden SQL protocols (Q-S6-13 (a), Q-S6-25 (a)). test/sql/NAME/ holds the
+# `langc sql` files of the protocol NAME in test/sql/NAME.lang, or in
+# test/report/NAME.lang, or in examples/NAME.lang (the first that exists).
+# Each run exits 0 with no stdout and no stderr, writes the same file names
+# as the golden directory, and each file equals its golden file byte for byte.
+sqls=0
+sqlfiles=0
+for want in $(printf '%s\n' test/sql/*/ | LC_ALL=C sort); do
+  sqls=$((sqls + 1))
+  name=$(basename "$want")
+  prog="test/sql/$name.lang"
+  [ -f "$prog" ] || prog="test/report/$name.lang"
+  [ -f "$prog" ] || prog="examples/$name.lang"
+  ls "$want" | LC_ALL=C sort >"$tmp/s.want"
+  rm -rf "$tmp/sql"
+  mkdir "$tmp/sql"
+  status=0
+  build/langc sql "$prog" "$name" "$tmp/sql" >"$tmp/s.out" 2>"$tmp/s.err" || status=$?
+  ls "$tmp/sql" | LC_ALL=C sort >"$tmp/s.got"
+  for f in $(cat "$tmp/s.want"); do
+    sqlfiles=$((sqlfiles + 1))
+  done
+  if [ "$status" -ne 0 ] || [ -s "$tmp/s.out" ] || [ -s "$tmp/s.err" ]; then
+    echo "FAIL sql $name: exit $status $(head -n 1 "$tmp/s.err" | cut -c1-120)"
+    fail=$((fail + 1))
+  elif ! cmp -s "$tmp/s.want" "$tmp/s.got"; then
+    echo "FAIL sql $name: the file names are not the names in $want: $(cmp "$tmp/s.want" "$tmp/s.got" 2>&1 | cut -c1-120)"
+    fail=$((fail + 1))
+  else
+    for f in $(cat "$tmp/s.want"); do
+      if ! cmp -s "$want$f" "$tmp/sql/$f"; then
+        echo "FAIL sql $name: $f is not $want$f: $(cmp "$want$f" "$tmp/sql/$f" 2>&1 | cut -c1-120)"
+        fail=$((fail + 1))
+      fi
+    done
+  fi
+done
+echo "sql: $sqls golden protocols, $sqlfiles files"
 
 rm -rf "$tmp"
 

@@ -1,0 +1,4 @@
+table users (id : bigint key, email : text)
+
+protocol ix lockTimeout 5000 where
+  createIndexConcurrently users email

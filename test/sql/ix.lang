@@ -1,0 +1,7 @@
+-- A golden SQL protocol (S6 U4): createIndexConcurrently with lockTimeout
+-- 5000. Stage 1 is a bare stage: it has no BEGIN, and SET lock_timeout is
+-- not LOCAL.
+table users (id : bigint key, email : text)
+
+protocol ix lockTimeout 5000 where
+  createIndexConcurrently users email

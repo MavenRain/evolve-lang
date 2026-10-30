@@ -1,0 +1,2 @@
+protocol p lockTimeout 0 where
+  deploy v1

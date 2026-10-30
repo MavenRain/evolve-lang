@@ -1,0 +1,224 @@
+-- The laws L2 and L3 (PLAN 6.1, Q-S6-12 (a)) on the rename protocol of
+-- examples/rename.lang, as decisions over a finite table model with `refl`
+-- proofs (as L1). The model has 10 rows at the keys 0, 250, ..., 2250. A row
+-- holds the value of display_name (the `witness` function) and of name (the
+-- `payload` function). The batch size is the batch of the `backfill` step of
+-- the protocol. Each law has an entry that gives false on a broken model.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.name, reads users.id, writes users.name, inserts users.id, inserts users.name)
+
+app v3 (reads users.display_name, reads users.id, writes users.display_name, inserts users.id, inserts users.display_name)
+
+protocol rename where
+  addColumn users display_name text
+  installSync users display_name name
+  backfill users display_name ← name batch 1000
+  deploy v3
+  retire v1
+  dropSync users display_name name
+  dropColumn users name
+
+codata Stream (A : Type 0) : Type where
+  corec : (head : A) → (tail : Stream A) → Stream A
+
+-- `drop A j x` is x after j tails, and `at A j x` is its head.
+drop : (A : Type 0) → (j : ℕ) → (x : Stream A) → Stream A
+drop A j x = fold (λ (y : Stream A) → tail A y) x j
+
+at : (A : Type 0) → (j : ℕ) → (x : Stream A) → A
+at A j x = head A (drop A j x)
+
+-- Two streams are bisimilar when their heads are equal at each position.
+StreamBisim : (A : Type 0) → (x : Stream A) → (y : Stream A) → Type 0
+StreamBisim A x y = (j : ℕ) → Path A (at A j x) (at A j y)
+
+-- The batch of a step: the batch of a `backfill` step, else 0.
+stepBatch : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (h : Step n m s s1) → ℕ
+stepBatch n m s s1 h = fold (λ (x : State n m) (t : Fin m) (c : Fin n) (v : ColType) (ok : Path Bool (preAddColumn n m x t c v) true) → 0) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preInstallSync n m x t c d) true) → 0) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (ok : Path Bool (preDropSync n m x t c d) true) → 0) (λ (x : State n m) (t : Fin m) (c : Fin n) (d : Fin n) (k : ℕ) (ok : Path Bool (preBackfill n m x t c d k) true) → k) (λ (x : State n m) (a : App n) → 0) (λ (x : State n m) (a : App n) → 0) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropColumn n m x t c) true) → 0) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preAddNotNullCheck n m x t c) true) → 0) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preValidate n m x t c) true) → 0) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preSetNotNull n m x t c) true) → 0) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preDropCheck n m x t c) true) → 0) (λ (x : State n m) (t : Fin m) (c : Fin n) (ok : Path Bool (preCreateIndex n m x t c) true) → 0) h
+
+-- The batch of the last `backfill` step of a chain, else 0.
+batchOf : (n : ℕ) → (m : ℕ) → (s : State n m) → (s1 : State n m) → (a : Chain n m s s1) → ℕ
+batchOf n m s s1 a = fold (λ (x : State n m) → 0) (λ (x : State n m) (y : State n m) (z : State n m) (w : Chain n m x y) (h : Step n m y z) (ih : ℕ) → flagIf (natEq (stepBatch n m y z h) 0) ih (stepBatch n m y z h)) a
+
+size : ℕ
+size = batchOf 3 1 rename_0 rename_7 rename
+
+rows : ℕ
+rows = 10
+
+-- The key of the row i: i times 250.
+keyOf : (i : ℕ) → ℕ
+keyOf i = fold (λ (x : ℕ) → natAdd x 250) 0 i
+
+-- The number of batches that cover the rows: 3 of 1000.
+batches : ℕ
+batches = 3
+
+-- The table: display_name, then name, as functions of the key.
+Table : Type 0
+Table = (ℕ → ℕ) × (ℕ → ℕ)
+
+-- The table after addColumn: display_name is 0 (NULL), name is key + 1.
+start : Table
+start = pack (λ (key : ℕ) → 0) (λ (key : ℕ) → natAdd key 1)
+
+-- `rowSame t u key` is true when t and u agree on the row `key`.
+rowSame : (t : Table) → (u : Table) → (key : ℕ) → Bool
+rowSame t u key = boolAnd (natEq (witness t key) (witness u key)) (natEq (payload t key) (payload u key))
+
+-- `same k t u` is true when t and u agree on the rows 0 .. k - 1.
+same : (k : ℕ) → (t : Table) → (u : Table) → Bool
+same k t u = allFrom k (λ (i : ℕ) → rowSame t u (keyOf i)) 0
+
+-- `rowSynced t key` is true when display_name = name on the row `key`.
+rowSynced : (t : Table) → (key : ℕ) → Bool
+rowSynced t key = natEq (witness t key) (payload t key)
+
+-- `synced k t` is true when display_name = name on the rows 0 .. k - 1.
+synced : (k : ℕ) → (t : Table) → Bool
+synced k t = allFrom k (λ (i : ℕ) → rowSynced t (keyOf i)) 0
+
+-- L2: the backfill. A batch (low, high) sets display_name := name at each
+-- key from low to high - 1 (keyset backfill, Q-S6-7 (a)).
+inRange : (b : KeyRange) → (key : ℕ) → Bool
+inRange b key = boolAnd (natLe (witness b) key) (natLe (natAdd key 1) (payload b))
+
+copyBatch : (b : KeyRange) → (t : Table) → Table
+copyBatch b t = pack (λ (key : ℕ) → flagIf (inRange b key) (payload t key) (witness t key)) (payload t)
+
+-- The batch plan from the key lo: (lo, lo + size), then the plan from lo +
+-- size.
+plan : (lo : ℕ) → Stream KeyRange
+plan lo = corec KeyRange ℕ (λ (x : ℕ) → pack x (natAdd x size)) (λ (x : ℕ) → natAdd x size) lo
+
+-- `run f j x t` applies the batches 0 .. j - 1 of x to t, each by f.
+run : (f : KeyRange → Table → Table) → (j : ℕ) → Stream KeyRange → Table → Table
+run f j = fold (λ (r : Stream KeyRange → Table → Table) (x : Stream KeyRange) (t : Table) → r (tail KeyRange x) (f (head KeyRange x) t)) (λ (x : Stream KeyRange) (t : Table) → t) j
+
+full : Table
+full = run copyBatch batches (plan 0) start
+
+-- L2 part 1: the backfill run two times gives the same table as one run.
+twiceOnce : Bool
+twiceOnce = same rows (run copyBatch batches (plan 0) full) full
+
+twiceOnceProof : Path Bool twiceOnce true
+twiceOnceProof = refl
+
+-- Broken: a batch that adds name to display_name is not idempotent.
+addBatch : (b : KeyRange) → (t : Table) → Table
+addBatch b t = pack (λ (key : ℕ) → flagIf (inRange b key) (natAdd (witness t key) (payload t key)) (witness t key)) (payload t)
+
+addTwice : Bool
+addTwice = same rows (run addBatch batches (plan 0) (run addBatch batches (plan 0) start)) (run addBatch batches (plan 0) start)
+
+-- L2 part 2: the ledger point is the high key of the first batch. The run
+-- from the ledger point, after the first batch, gives the table of the run
+-- with no stop. The plan from the ledger point is bisimilar to the tail of
+-- the full plan.
+ledger : ℕ
+ledger = payload (at KeyRange 0 (plan 0))
+
+stopped : Table
+stopped = run copyBatch 1 (plan 0) start
+
+resumed : Bool
+resumed = same rows (run copyBatch (natSub batches 1) (plan ledger) stopped) full
+
+resumedProof : Path Bool resumed true
+resumedProof = refl
+
+ledgerBisim : StreamBisim KeyRange (drop KeyRange 1 (plan 0)) (plan ledger)
+ledgerBisim j = refl
+
+-- Broken: a resume that starts one batch after the ledger point.
+skipResume : Bool
+skipResume = same rows (run copyBatch (natSub batches 1) (plan (natAdd ledger size)) stopped) full
+
+-- L3: the write path. A write sets the column with the code `col` of the
+-- row `key` to `val`: the key, then the column code, then the value.
+Write : Type 0
+Write = ℕ × ℕ × ℕ
+
+-- One write. When `on`, the sync trigger also sets the other column: the
+-- two columns get the value (Q-S6-8 (a)).
+write : (on : Bool) → (w : Write) → (t : Table) → Table
+write on w t = pack (λ (key : ℕ) → flagIf (boolAnd (natEq key (witness w)) (boolOr on (natEq (witness (payload w)) (witness users_display_name)))) (payload (payload w)) (witness t key)) (λ (key : ℕ) → flagIf (boolAnd (natEq key (witness w)) (boolOr on (natEq (witness (payload w)) (witness users_name)))) (payload (payload w)) (payload t key))
+
+-- `writes on j ws t` applies the writes 0 .. j - 1 of ws to t.
+writes : (on : Bool) → (j : ℕ) → (ws : ℕ → Write) → (t : Table) → Table
+writes on j ws t = fold (λ (r : ℕ → Table → Table) (i : ℕ) (u : Table) → r (natAdd i 1) (write on (ws i) u)) (λ (i : ℕ) (u : Table) → u) j 0 t
+
+-- Three writes: v1 sets name at the keys 250 and 1500, v3 sets
+-- display_name at the key 2250.
+ws : ℕ → Write
+ws i = flagIf (natEq i 0) (pack 250 (pack (witness users_name) 70)) (flagIf (natEq i 1) (pack 1500 (pack (witness users_name) 71)) (pack 2250 (pack (witness users_display_name) 72)))
+
+-- `syncOn s` is true when the sync from display_name to name is installed
+-- at the state s.
+syncOn : (s : State 3 1) → Bool
+syncOn s = sync 3 1 s (witness users_display_name) (witness users_name)
+
+-- `keeps s t` is true when each write keeps display_name = name on the row
+-- that it touches, with the trigger of the state s.
+keeps : (s : State 3 1) → (t : Table) → Bool
+keeps s t = allFrom 3 (λ (i : ℕ) → rowSynced (writes (syncOn s) (natAdd i 1) ws t) (witness (ws i))) 0
+
+-- L3 part 1: at stage 2 (installSync), each write keeps its row synced.
+writeKeep : Bool
+writeKeep = keeps rename_2 stopped
+
+writeKeepProof : Path Bool writeKeep true
+writeKeepProof = refl
+
+-- Broken: at stage 1 the sync is not installed.
+writeNoSync : Bool
+writeNoSync = keeps rename_1 stopped
+
+-- L3 part 2: the backfill stops after the first batch, the three writes
+-- run, and the backfill resumes from the ledger point. Then
+-- display_name = name on each row.
+backfilled : (f : KeyRange → Table → Table) → Table
+backfilled f = run f (natSub batches 1) (plan ledger) (writes (syncOn rename_2) 3 ws (run f 1 (plan 0) start))
+
+rowsAfter : Bool
+rowsAfter = synced rows (backfilled copyBatch)
+
+rowsAfterProof : Path Bool rowsAfter true
+rowsAfterProof = refl
+
+-- Broken: a batch that starts one key after its low key.
+lateBatch : (b : KeyRange) → (t : Table) → Table
+lateBatch b t = copyBatch (pack (natAdd (witness b) 1) (payload b)) t
+
+lateFill : Bool
+lateFill = synced rows (backfilled lateBatch)
+
+-- L3 part 3: the row equivalence swaps the two columns. A transport along
+-- its `ua` moves the read of v1 (name) to the read of v3 (display_name).
+Row : Type 0
+Row = ℕ × ℕ
+
+swapRow : (r : Row) → Row
+swapRow r = pack (payload r) (witness r)
+
+swapEquiv : Equiv Row Row
+swapEquiv = pack swapRow (λ y → pack (pack (swapRow y) refl) (λ z i → pack (swapRow (payload z (~ i))) (λ j → payload z (~ i ∨ j))))
+
+uaRow : Path (Type 0) Row Row
+uaRow = ua Row Row swapEquiv
+
+movesRead : (r : Row) → Path ℕ (witness (transp (λ i → uaRow i) i0 r)) (payload r)
+movesRead r = refl
+
+-- After the backfill, the transport of each row is the row: v3 reads what
+-- v1 wrote.
+rowAt : (t : Table) → (key : ℕ) → Row
+rowAt t key = pack (witness t key) (payload t key)
+
+readsMove : Bool
+readsMove = allFrom rows (λ (i : ℕ) → natEq (witness (transp (λ j → uaRow j) i0 (rowAt (backfilled copyBatch) (keyOf i)))) (witness (rowAt (backfilled copyBatch) (keyOf i)))) 0
+
+readsMoveProof : Path Bool readsMove true
+readsMoveProof = refl
