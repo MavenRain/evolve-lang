@@ -456,6 +456,37 @@ for want in $(printf '%s\n' test/sql/*/ | LC_ALL=C sort); do
 done
 echo "sql: $sqls golden protocols, $sqlfiles files"
 
+# The MCP server (Q-S8-11 (a)). build/mcp-test sends test/mcp/requests.jsonl to
+# `build/langc mcp` and compares the replies with test/mcp/responses.jsonl line
+# by line. Then it sends a ping of MCP_LINE_MAX_BYTES bytes, a ping one byte
+# longer (-32700) and one more ping. Then it sends a `check` of each of the 5
+# programs of examples/agent/ and compares each reply with `build/langc check
+# --json PATH`: the text is the stdout, and isError is exit != 0. Each run
+# exits 0 with no stderr. It prints FAIL lines, then the count line.
+build/mcp-test "$tmp" || fail=$((fail + 1))
+
+# explain-code and list-steps (Q-S8-7 (a), Q-S8-8 (a)). build/verbs-test runs
+# `build/langc explain-code CODE` for each row of docs/DIAGNOSTICS.md and
+# compares the line with the row, then compares each row of src/codes.c with
+# its doc row (both ways). It compares the step names of `build/langc
+# list-steps`, in order, with the Step constructors of domain/domain.lang. It
+# prints FAIL lines, then the two count lines.
+build/verbs-test || fail=$((fail + 1))
+
+# The skill (Q-S8-9 (a), Q-S8-10 (a)). build/skill-test compares the program
+# block of each example of skills/evolve-lang/SKILL.md with its file, and the
+# stdout and the exit code of `build/langc check --json PATH` with the json
+# block and the exit sentence. It compares examples 1, 2 and 4 with their
+# sources. It prints FAIL lines, then the count line.
+build/skill-test || fail=$((fail + 1))
+
+# The README table and AGENTS.md (Q-S8-12 (a)). build/readme-test checks that
+# each yes row of the table has a slice tag and names steps, that each named
+# step is a step of `build/langc list-steps`, that each of the 12 steps is
+# named, and that each verb after `langc ` in AGENTS.md is in the usage text.
+# It prints FAIL lines, then the count line.
+build/readme-test || fail=$((fail + 1))
+
 rm -rf "$tmp"
 
 if rg -n '\x{2013}|\x{2014}' . >/dev/null; then

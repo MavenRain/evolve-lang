@@ -1,0 +1,18 @@
+-- Example 3: the rename with a too-early drop. The protocol drops users.name
+-- before the deploy of v3, so v1 is live at the drop, and v1 reads, writes
+-- and inserts users.name. The checker refuses the drop with
+-- REFUSE_DROP_REQUIRED. To repair it, deploy v3 and retire v1 before the
+-- dropSync, as in example 2.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.name, reads users.id, writes users.name, inserts users.id, inserts users.name)
+
+app v3 (reads users.display_name, reads users.id, writes users.display_name, inserts users.id, inserts users.display_name)
+
+protocol rename where
+  addColumn users display_name text
+  installSync users display_name name
+  backfill users display_name ← name batch 1000
+  dropSync users display_name name
+  dropColumn users name
+  deploy v3

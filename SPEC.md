@@ -693,6 +693,129 @@ Tests:
   1, 6, 7 and 8 refuse the full protocol, so no checked program has a cell
   with them, and no golden module can have them (USER ruling 2026-10-30).
 
+### 6.5 The code table (`langc explain-code`)
+
+`langc explain-code CODE` writes the row of the diagnostic code CODE of
+`docs/DIAGNOSTICS.md` as one JSON line on stdout (Q-S8-7 (a)). The keys are
+in this order:
+
+- `code`: the code.
+- `severity`: `error` or `warning`.
+- `stage`: the Stage cell.
+- `meaning`: the Meaning cell verbatim, with its Markdown.
+
+The line has no Fixture cell. The rows are a C table in `src/codes.c` (53
+codes), in the order of `docs/DIAGNOSTICS.md`. Example: `langc explain-code
+USAGE` writes `{"code":"USAGE","severity":"error","stage":"all","meaning":"The
+command line is not valid."}`.
+
+The error paths:
+
+- No row has the code CODE: `USAGE` (`unknown code 'CODE'`) on stderr, and
+  the exit is 2.
+- The command line has no CODE, or more than one: `USAGE`, and the exit is
+  2.
+
+Tests: `build/verbs-test` (`test/verbs.c`) runs `explain-code` for each row
+of `docs/DIAGNOSTICS.md` and compares the line with the row. Then it
+compares each row of `src/codes.c` with its row in `docs/DIAGNOSTICS.md`,
+in the two directions. The gate prints `explain-code: 53 codes match
+docs/DIAGNOSTICS.md`.
+
+### 6.6 The protocol steps (`langc list-steps`)
+
+`langc list-steps` writes one JSON line on stdout for each `Step`
+constructor of `domain/domain.lang`, in the order of that file (Q-S8-8
+(a)). Each line has the keys `step` (the constructor) and `form` (its
+surface form in a `protocol`, 5.2), in this order. There are 12 lines. The
+first is `{"step":"addColumn","form":"addColumn t c ty"}`. The rows are a C
+table in `src/steps.c`.
+
+The command takes no argument. With an argument it gives `USAGE`, and the
+exit is 2.
+
+Tests: `build/verbs-test` compares the `step` names of `list-steps`, in
+order, with the `Step` constructors of `domain/domain.lang`. The gate
+prints `list-steps: 12 steps match domain/domain.lang`.
+
+### 6.7 The MCP server (`langc mcp`)
+
+`langc mcp` is a Model Context Protocol server on stdin and stdout. It
+implements the protocol revision 2025-11-25 (Q-S8-1 (a)).
+
+The transport (Q-S8-2 (a)):
+
+- Each line of stdin is one JSON-RPC 2.0 message, and each reply is one
+  line of stdout. The server drops a carriage return before the newline,
+  and it does not answer an empty line.
+- A line has at most 1 MiB (1048576 bytes) without the newline. A longer
+  line gives the error -32700 with the id `null`. The server drops the rest
+  of that line and reads the next line.
+- At the end of stdin the exit is 0. The exit is 2 when the server cannot
+  read stdin or write stdout.
+
+The messages:
+
+- The server reads each line with the JSON reader of `src/front/jsonin.c` (Q-S8-3
+  (a)). A line that is not JSON gives -32700 (`Parse error`) with the id
+  `null`.
+- A request has `jsonrpc` `"2.0"`, a string `method`, an `id` that is a
+  string, a number or `null`, and `params` that is an object or an array
+  when it is there. Another message gives -32600 (`Invalid Request`), with
+  its id when the id is valid, else with the id `null`.
+- A request with no `id` is a notification (for example
+  `notifications/initialized`). The server does not reply to it.
+- The methods are `initialize`, `ping`, `tools/list` and `tools/call`.
+  Another method gives -32601 (`Method not found`). The server keeps no
+  session state, so it answers each method also before `initialize`.
+- The reply to a request has the id of the request: a string id stays a
+  string, and a number id is the source text of the number.
+
+The methods:
+
+- `initialize` needs the string `params.protocolVersion`, else it gives
+  -32602 (`Invalid params`). The result always has `protocolVersion`
+  `"2025-11-25"`, whatever revision the client asks for. The result is
+  `{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"evolve-lang","version":"S8"}}`
+  (Q-S8-13 (a)).
+- `ping` gives the result `{}`.
+- `tools/list` gives the 5 tools. Each tool has a `description` and an
+  `inputSchema` with its string arguments, all required (Q-S8-4 (a)):
+
+  | Tool | Arguments | The verb |
+  |---|---|---|
+  | `check` | `path` | `langc check --json PATH` |
+  | `fmt` | `path` | `langc fmt PATH` |
+  | `report` | `path`, `protocol` | `langc report PATH PROTOCOL` |
+  | `explain-code` | `code` | `langc explain-code CODE` (6.5) |
+  | `list-steps` | none | `langc list-steps` (6.6) |
+
+- `tools/call` needs a string `params.name`. `params.arguments` is an
+  object when it is there. An unknown tool or a missing argument gives
+  -32602 (`Invalid params`). The server runs the verb in its process, as
+  the command line runs it, with new options and a new arena (Q-S8-6 (a),
+  Q-S8-15 (a)). A path is relative to the working directory of the server.
+  The result (Q-S8-5 (a)):
+  - `content` item 1 is a `text` item with the stdout of the verb.
+  - `content` item 2 is a `text` item with the stderr of the verb. It is
+    there only when the stderr is not empty (for example the `W_NONCANON`
+    line of `report`).
+  - `isError` is `true` when the exit code of the verb is not 0, else
+    `false`.
+
+  When the server cannot capture the output of the verb, the reply is
+  -32603 (`Internal error`).
+
+Tests: `build/mcp-test DIR` (`test/mcp.c`) sends the 30 lines of
+`test/mcp/requests.jsonl` to `build/langc mcp` and compares the replies
+with the 27 lines of `test/mcp/responses.jsonl`, line by line (a
+notification gets no reply). Then it sends a `ping` of 1048576 bytes, a `ping` of
+1048577 bytes (-32700) and one more `ping`. Then it sends a `check` of
+each program of `examples/agent/` and compares each reply with `build/langc
+check --json PATH`: the text is the stdout, and `isError` is exit != 0.
+Each run exits 0 with no stderr. The gate prints `mcp: 33 requests, 0
+mismatches; 5 examples`.
+
 ## 7. Target and instance encoding
 
 An instance is a top-level definition whose type is a data type (F14).

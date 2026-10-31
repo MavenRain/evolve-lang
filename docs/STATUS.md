@@ -1261,3 +1261,136 @@ differential modules). The table gives the killer on the module calls.
 - The differential tests the masks below 2^min(k, 6) of a stage with k
   facts, because the guest fold on a natural number is linear in its
   value.
+
+## S8: the agent kit (`langc mcp`, `explain-code`, `list-steps`, `SKILL.md`)
+
+S8 adds the agent kit (PLAN 7). `langc explain-code CODE` gives the row of
+a diagnostic code as one JSON line, and `langc list-steps` gives the 12
+protocol steps, one JSON line each. `langc mcp` is a Model Context
+Protocol server on stdin and stdout (revision 2025-11-25) with 5 tools:
+`check`, `fmt`, `report`, `explain-code` and `list-steps`.
+`skills/evolve-lang/SKILL.md` gives the verbs and 5 graded examples, and
+the gate runs each example. The README table names the steps of each yes
+row, and `AGENTS.md` gives the routing rule and the loop. SPEC.md 6.5, 6.6
+and 6.7 give the commands.
+
+### Source
+- Port from quorum-lang 0c729b6 (PLAN 8): the MCP server shape (NDJSON,
+  the lifecycle). `src/front/jsonin.c` (259 lines) and
+  `src/front/jsonin.h` are copies, and `utf8_char_size` in
+  `src/front/base.c` is a copy of quorum-lang `base.c` lines 109 to 123.
+- New: `src/mcp.c` (245 lines), `src/mcp.h`, `src/codes.c` (193 lines),
+  `src/codes.h`, `src/steps.c`, `src/steps.h`, `test/mcp.c`,
+  `test/verbs.c`, `test/skill.c`, `test/readme.c`,
+  `test/mcp/requests.jsonl`, `test/mcp/responses.jsonl`,
+  `skills/evolve-lang/SKILL.md` and the 5 programs of `examples/agent/`.
+  S8 changes 10 files and adds 20 files. It removes no file.
+
+### Units
+- U0, the verbs write to a FILE* (no behaviour change): `run_check`,
+  `run_report` and `run_fmt` of `src/main.c` take the arguments `out` and
+  `err`, so `langc mcp` can capture the output of a verb. `src/main.c` has
+  no file-scope static that is not const. The gate counts are those of S7.
+- U1, the MCP server (Q-S8-1 to Q-S8-6 (a), Q-S8-13 (a)): `src/mcp.c`
+  reads one message on each line with a 1 MiB line cap, and `initialize`
+  always gives the revision 2025-11-25. `src/main.c` gives the verbs to
+  `mcp_serve` as the callback `McpRunTool` (Q-S8-6 (a)), so
+  `build/diagnostics` and `build/sql-writer` link without `src/main.c`. A
+  tool result has the stdout of the verb as item 1, the stderr as item 2
+  when it is not empty, and `isError` (Q-S8-5 (a)). The goldens
+  `test/mcp/requests.jsonl` and `test/mcp/responses.jsonl` and
+  `build/mcp-test` (Q-S8-11 (a)). The mutants M1, M2, M4 and M9.
+- U2, `explain-code` and `list-steps` (Q-S8-7 (a), Q-S8-8 (a), Q-S8-15
+  (a)): the C tables `src/codes.c` (the 53 rows of
+  `docs/DIAGNOSTICS.md`) and `src/steps.c` (the 12 `Step` constructors),
+  the two commands and the two tools. The `McpRunTool` parameter `path` is
+  now `arg`: the program path, the code of `explain-code`, or NULL for
+  `list-steps` (Q-S8-15 (a)). `build/verbs-test` compares the tables with
+  `docs/DIAGNOSTICS.md` and `domain/domain.lang`. The mutants M5 and M6.
+- U3, the skill (Q-S8-9 (a), Q-S8-10 (a), Q-S8-11 (a)): the 5 programs
+  of `examples/agent/`. Examples 1, 2 and 4 are copies of existing
+  programs, and examples 3 and 5 are new: a column dropped too early and
+  a stale read, both refused. `SKILL.md` has the verbs and, for each
+  example, a program block and a json block (two fences, Q-S8-9 (a)).
+  `build/skill-test` compares each program block with its file and each
+  json block with `langc check --json`. `build/mcp-test` sends a `check`
+  of each program and compares the reply with the command line. The
+  mutants M3, M7 and M8.
+- U4, the README, `AGENTS.md` and the docs (Q-S8-12 (a), Q-S8-14 (a)):
+  the README table has a Steps column and a new yes row (an index build
+  that does not block writes, `createIndexConcurrently`). The README gives
+  the Prisma ORM 8 status (O7). `AGENTS.md` has the routing rule, the loop
+  and the 12 verbs. `build/readme-test` checks the table and the verbs of
+  `AGENTS.md`. SPEC.md 6.5 to 6.7; PLAN 8, the S8 row, O3 and O7
+  CLOSED; this section. The mutant M10.
+
+### Gate counts against S7
+
+| Count | S7 (031ca60) | S8 |
+|---|---|---|
+| examples | 12 | 12 |
+| parse refusals | 11 | 11 |
+| check refusals | 80 | 80 |
+| evals | 254 | 254 |
+| ir lowered | 12 | 12 |
+| wasm modules | 16 | 16 |
+| differential cases (0 mismatches) | 892 | 892 |
+| oracle golden modules, calls (0 mismatches) | 6, 175 | 6, 175 |
+| oracle differential cases (0 mismatches) | 143 | 143 |
+| fmt canonical, non-canonical pairs | 173, 8 | 173, 8 |
+| json fixtures | 38 | 38 |
+| diagnostics codes (fixture, no fixture) | 53 (36, 17) | 53 (36, 17) |
+| golden reports | 6 | 6 |
+| golden SQL protocols, files | 10, 60 | 10, 60 |
+| mcp requests (0 mismatches), examples | none | 33, 5 |
+| explain-code codes | none | 53 |
+| list-steps steps | none | 12 |
+| skill examples, outputs | none | 5, 5 |
+| readme rows, steps named; agents verbs | none | 7, 12; 12 |
+| cubical checks, round trips | 52, 29 | 52, 29 |
+| json writer regressions | 21 | 21 |
+| report guard regressions | 4 | 4 |
+| sql writer regressions | 4 | 4 |
+| sql protocol regressions | 13 | 13 |
+
+The gate has 0 failures, and no line is a FAIL line. The 28 count lines of
+S7 are the same, in the same order. The review, domain and diagnostic edit
+regressions pass.
+
+### Op values
+51 Op values. S8 adds no Op. `src/front/eval.c` and the kernel do not
+change.
+
+### Mutants
+Each mutant makes one change, then `make -B` of the binary and the test
+that kills it. Each mutant is KILLED. After each mutant the file is
+restored, `cmp` with its backup is equal, and the test passes again.
+
+| Mutant | Site | Result |
+|---|---|---|
+| M1 | `src/mcp.c` `initialize`: the result echoes the revision of the client | KILLED by `build/mcp-test` (1 mismatch) |
+| M2 | `src/mcp.c`: a notification gets a reply | KILLED by `build/mcp-test` (23 mismatches) |
+| M3 | `src/mcp.c` `tools/call`: `isError` is always false | KILLED by `build/mcp-test` (6 mismatches: 4 goldens, 2 examples) |
+| M4 | `src/mcp.c`: a number id is echoed as a string | KILLED by `build/mcp-test` (18 mismatches) |
+| M5 | `src/codes.c` `code_find`: the next row | KILLED by `build/verbs-test` (53 mismatches) |
+| M6 | `src/steps.c` `step_count`: one row less | KILLED by `build/verbs-test` (2 mismatches) |
+| M7 | `SKILL.md`: the json block of example 2 says `12 of 13` | KILLED by `build/skill-test` (1 mismatch) |
+| M8 | `src/mcp.c` `tools/call`: item 1 stops before `{"parsed"` | KILLED by `build/mcp-test` (8 mismatches) |
+| M9a | `src/mcp.c`: no line cap (the buffer and the cap times 4) | KILLED by `build/mcp-test` (the long ping gets a reply) |
+| M9b | `src/mcp.c`: the server stops after a long line | KILLED by `build/mcp-test` (the last ping gets no reply) |
+| M9c | `src/mcp.c`: the cap is one byte less | KILLED by `build/mcp-test` (the ping of 1048576 bytes gets -32700) |
+| M10 | `test/readme.c` `find_name`: an unknown name gives row 0 | KILLED by a README copy where row 2 names `deplo` (see below) |
+
+M10 changes the gate check, not `langc`. The unchanged
+`build/readme-test COPY` exits 1 with `FAIL: readme: row 2: deplo is not
+a step of build/langc list-steps`. The mutant exits 0 on the copy, and it
+also exits 0 on `README.md`.
+
+### Open items from S8
+- Q-S8-1 to Q-S8-15 are RULED (a) (USER 2026-10-30). O3 and O7 are
+  CLOSED (PLAN section 10).
+- The gate does not kill M10: `README.md` names only steps of `langc
+  list-steps`, so the check of an unknown name runs only on the copy.
+- The server keeps no session state. It answers `tools/call` also before
+  `initialize`.
+- S9 (PLAN 9): `docs/TOKEN-BASELINE.md` and its script.

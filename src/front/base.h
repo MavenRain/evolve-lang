@@ -68,6 +68,9 @@ void diag_print(const Diag *diag, FILE *out);
    fix, retry, message. */
 void diag_print_json(const Diag *diag, FILE *out);
 
+/* The byte size of the first UTF-8 scalar, or 0 for an invalid sequence. */
+size_t utf8_char_size(const char *text, size_t len);
+
 /* The JSON string rule of `check --json` and of src/json.c. TEXT points to
    a byte that is not the terminating NUL. Writes the JSON form of the byte
    or the UTF-8 scalar at TEXT to ESC (at most JSON_ESCAPE_MAX bytes, no

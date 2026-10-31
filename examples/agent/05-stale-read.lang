@@ -1,0 +1,19 @@
+-- Example 5: a rollout with two segments and a stale read. The deploy of v2
+-- is a barrier, so the protocol has two segments. In a segment, tenants can
+-- be at mixed stages, and each live version can meet each stage of the
+-- segment. In segment 2, v1 and v2 are live. After the dropSync, v1 writes
+-- orders.status and v2 reads orders.state, and no trigger copies the value.
+-- The checker refuses the dropSync with REFUSE_STALE_READ.
+table orders (id : bigint key, status : text)
+
+app v1 (reads orders.id, reads orders.status, writes orders.status, inserts orders.id, inserts orders.status)
+
+app v2 (reads orders.id, reads orders.state, writes orders.state, inserts orders.id, inserts orders.state)
+
+protocol rollout where
+  addColumn orders state text
+  installSync orders state status
+  backfill orders state ← status batch 500
+  deploy v2
+  createIndexConcurrently orders state
+  dropSync orders state status

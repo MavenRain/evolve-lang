@@ -495,8 +495,7 @@ EXTRA.
 | leaf-lang | e3e2338 + working-tree snapshot (2026-10-26, patch sha256 be7912102f3ee04f) | S2a: `I`, `PathP`, `Path`, `transp`, `hcomp`, systems; the unreachable Ops removed (leaf-lang S2 units U1 to U4). Frozen: no later leaf-lang state is read (O17) |
 | quorum-lang | 8dee55b | S2b: indexed families (D11), higher constructors, `REFUSE_CELL` for CMs (no `record` form, no parameter sections) |
 | zkpolicy-lang | 1d263fb | S2e: `Glue`, `glue`, `unglue`, `ua` (`transp_glue`, `hcomp_glue`) |
-
-No *-lang repository has an MCP server in C yet (O3).
+| quorum-lang | 0c729b6 | S8: the MCP server shape (NDJSON, the lifecycle); `src/front/jsonin.{c,h}` and `utf8_char_size` of `src/front/base.c` (copies, Q-S8-3 (a)) |
 
 ## 9. Slices
 
@@ -517,7 +516,7 @@ on the new checks, docs, close (stage, commit message, next prompt).
 | S5 | JSON report (port of `json.c`), `Fact`, `Guard`, runtime rows | golden reports; mutants on the verdict map: 6 golden reports (`test/report/`, Q-S5-7 (a)); 11 mutants KILLED of 11: M1 to M3 change one cell verdict, M4 inverts `live`, M5 loses the last guard fact, M6 joins two segments, M7 writes `fix` as `code`, M8 swaps the app and the stage of a matrix row, M9 swaps the `backfillDone` fields, M10 moves `fleetAt` one stage, M11 removes `retired` from `stageGuard` (docs/STATUS.md, S5) |
 | S6 | SQL writer: stage files, `lock_timeout`, guards, ledger, backfill procedure, sync triggers, the CHECK path, `createIndexConcurrently` (Q11); L2, L3; `make check-pg` (optional) | golden SQL files; mutants on lock and guard output. DONE. Measured 2026-10-30: `make check` EXIT 0: examples 12; parse refusals 11; check refusals 80; evals 218; ir 12; wasm 16; differential 892 cases, 0 mismatches; fmt 165 canonical, 8 non-canonical pairs; json 38 fixtures, diagnostics 52 codes (36 with a fixture, 16 with no fixture); golden reports 6; sql 9 golden protocols, 53 files; cubical 52 checks, 29 round trips; sql writer regressions 4. U0: the 12th `Step` constructor `createIndexConcurrently`, `preCreateIndex`, `KeyRange` and the `lockTimeout` clause (Q-S6-6, Q-S6-10, Q-S6-12, Q-S6-15 (a)). U1: L2 and L3 in `test/eval/backfill-laws.lang`, 7 `refl` proofs and 4 broken models. U2: `src/sql.c`, `src/sql.h` and the command `langc sql`: `00-setup.sql`, the stage shape and the SQL of the 12 steps, `SQL_NAME_LONG` (Q-S6-1, Q-S6-2, Q-S6-5, Q-S6-11, Q-S6-16 to Q-S6-20 (a)). U3: the tenants, the version registry, the guards, the sync trigger, the backfill procedure, the CHECK path and the INVALID index drop (Q-S6-3, Q-S6-4, Q-S6-7 to Q-S6-9, Q-S6-21, Q-S6-22 (a)). U4: 9 golden protocols with 53 files in `test/sql/` (Q-S6-13, Q-S6-23 to Q-S6-25 (a)). U5: OUTDIR must exist (Q-S6-26 (a)), the mutants and the docs (SPEC.md 6.3; PLAN 5.1, O4, O19; `docs/STATUS.md` S6; `README.md`). No native PostgreSQL server run and no `make check-pg` (Q-S6-14 (a), O19). 8 mutants KILLED of 8: M1 adds 1 to the lock timeout, M2 removes the `fleetAt` DO block, M3 swaps the `backfillDone` columns, M4 moves `fleetAt` one stage, M5 names the wrong app in `retired`, M6 puts a bare stage in a transaction, M7 changes the retry SQLSTATE, M8 lets S win in the sync trigger (docs/STATUS.md, S6) |
 | S7 | Wasm oracle writer | differential gate against `langc eval`. DONE. Measured 2026-10-30: `make check` EXIT 0: examples 12; parse refusals 11; check refusals 80; evals 254; ir 12; wasm 16; differential 892 cases, 0 mismatches; oracle 6 golden modules, 175 calls, 0 mismatches; oracle differential 143 cases, 0 mismatches; fmt 173 canonical, 8 non-canonical pairs; json 38 fixtures, diagnostics 53 codes (36 with a fixture, 17 with no fixture); golden reports 6; sql 10 golden protocols, 60 files; cubical 52 checks, 29 round trips; sql writer regressions 4; sql protocol regressions 13. U0: `src/wasmbin.c`, the byte helpers of `src/wasm.c` and `src/oracle.c`; the i32 calls of `test/run-wasm.mjs` (Q-S7-1, Q-S7-2 (a)). U1: the guest folds `verdictCode` and `guardFirst` (Q-S7-3, Q-S7-4 (a)), 36 evals. U2: `src/oracle.c`, `langc wasm` and `WASM_LIMIT` (Q-S7-5 (a)). U3: 6 golden modules `test/wasm/` and the differential on `test/oracle/` (Q-S7-6, Q-S7-7 (a)); `test/oracle-writer.c` checks `WASM_LIMIT` and the cell byte of each code 0 to 9. U4: 8 mutants KILLED of 8 (docs/STATUS.md, S7); the docs (Q-S7-8 (a)) |
-| S8 | agent kit: `SKILL.md` with 5 graded examples, `langc mcp`, `explain-code`, final `AGENTS.md` and README table | MCP stdio test; each example passes `check` |
+| S8 | agent kit: `SKILL.md` with 5 graded examples, `langc mcp`, `explain-code`, final `AGENTS.md` and README table | MCP stdio test; each example passes `check`. DONE. Measured 2026-10-31: `make check` EXIT 0: examples 12; parse refusals 11; check refusals 80; evals 254; ir 12; wasm 16; differential 892 cases, 0 mismatches; oracle 6 golden modules, 175 calls, 0 mismatches; oracle differential 143 cases, 0 mismatches; fmt 173 canonical, 8 non-canonical pairs; json 38 fixtures, diagnostics 53 codes (36 with a fixture, 17 with no fixture); golden reports 6; sql 10 golden protocols, 60 files; mcp 33 requests, 0 mismatches, 5 examples; explain-code 53 codes; list-steps 12 steps; skill 5 examples, 5 outputs match; readme 7 rows, 12 steps named, agents 12 verbs in usage; cubical 52 checks, 29 round trips; sql writer regressions 4; sql protocol regressions 13. U0: the verbs of `src/main.c` write to a FILE* argument; U1: `src/mcp.c` and the JSON reader `src/front/jsonin.c`; U2: `explain-code` (`src/codes.c`) and `list-steps` (`src/steps.c`); U3: `skills/evolve-lang/SKILL.md` and the 5 programs of `examples/agent/`; U4: the README table, AGENTS.md and the docs. the mutants M1 to M10 (M9 in 3 parts) are all KILLED (`docs/STATUS.md` S8). |
 | S9 | `docs/TOKEN-BASELINE.md` and its script | the script output equals the file |
 | S10 | close: `docs/STATUS.md`, `docs/VALIDATION.md`, full gate, mutant summary | full gate EXIT 0 |
 
@@ -527,8 +526,9 @@ on the new checks, docs, close (stage, commit message, next prompt).
   a Docker PostgreSQL.
 - O2 libpq, psql and postgres are not installed on this machine
   (2026-10-25); docker is. USER step: `brew install libpq` before O1.
-- O3 the MCP server has no C precedent in the *-lang repositories. S8 pins
-  the MCP protocol revision it implements.
+- O3 CLOSED (S8): `langc mcp` implements the MCP protocol revision
+  2025-11-25 (Q-S8-1 (a); SPEC.md 6.7). A C MCP server exists in quorum-lang
+  0c729b6 (section 8).
 - O4 the PG 18 form `NOT NULL ... NOT VALID`. The 18.6 ALTER TABLE page now
   lists not-null constraints for NOT VALID; the docs bug of 18.4
   (`design/DESIGN.md` section 3) looks fixed. A version-gated form (Q5 RULED (a)).
@@ -539,8 +539,10 @@ on the new checks, docs, close (stage, commit message, next prompt).
   PostgreSQL source before a doc cites it.
 - O6 the Reddit thread of the description was not found. Prior art for
   multi-tenant rollout: Atlas staged rollouts, Turso.
-- O7 Prisma 8 (renamed from Prisma Next) GA was expected in October 2026.
-  Check its status before the README compares with it (S8).
+- O7 CLOSED (S8): Prisma ORM 8 (renamed from Prisma Next) is a release
+  candidate, 8.0.0-rc.29 on 2026-10-30
+  (https://www.prisma.io/docs/orm/release-status). The README gives this
+  status and makes no claim about its features.
 - O8 the kit sample domain (`domain/domain.lang`) and its examples stay
   until S3 replaces them. S1 moved them to the S1 surface.
 - O9 column types beyond `text` and `bigint` on a USER ask only (Q13).

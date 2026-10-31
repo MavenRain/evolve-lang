@@ -6,10 +6,11 @@ requirements of each application version, and a migration protocol: a chain
 of steps. The checker computes which application versions stay compatible at
 each intermediate stage. It refuses a protocol that leaves a live
 application version without a column that the version needs. The host is
-TinyCC. The JSON compatibility report is built (S5). The planned targets
-are PostgreSQL SQL stage files and a Wasm compatibility oracle module.
+TinyCC. The JSON compatibility report (S5), the PostgreSQL SQL stage files
+(S6), the Wasm compatibility oracle module (S7) and the agent kit (S8) are
+built.
 
-## Status (S5)
+## Status (S8)
 
 S1 gives the evolve-lang surface on the tcc-wasm kit of lang-template: the
 Agda-like syntax with ASCII aliases (`SPEC.md` section 2), `langc fmt`,
@@ -34,7 +35,11 @@ SQL writer `langc sql PROG PROTOCOL OUTDIR` (`SPEC.md` 6.3): one
 PostgreSQL file for each stage, with `lock_timeout`, the guards and the
 progress ledger. S7 adds the Wasm oracle `langc wasm PROG PROTOCOL -o OUT`
 (`SPEC.md` 6.4): a Wasm module with the compatibility table of one
-protocol, for an agent or a CI job with no C toolchain. `make check` passes.
+protocol, for an agent or a CI job with no C toolchain. S8 adds the agent
+kit: `langc explain-code CODE` (`SPEC.md` 6.5), `langc list-steps`
+(`SPEC.md` 6.6), the MCP server `langc mcp` (`SPEC.md` 6.7, protocol
+revision 2025-11-25), `skills/evolve-lang/SKILL.md` and the 5 graded
+examples of `examples/agent/`. `make check` passes.
 `docs/PLAN.md` section 9 gives the slices, and `docs/STATUS.md` gives the state.
 
 evolve-lang does not promise zero downtime. The checker proves
@@ -48,14 +53,24 @@ A native PostgreSQL server run is still open (`docs/PLAN.md` O19).
 
 ## When to use evolve-lang
 
-| Task | evolve-lang? |
-|---|---|
-| a schema change while old application versions still run | yes (S4) |
-| a multi-tenant rollout with tenants at mixed stages | yes (S4) |
-| a resumable backfill | yes (S6) |
-| NOT NULL by CHECK NOT VALID, then VALIDATE | yes (S6) |
-| ad hoc SQL, data analysis, one-off local schemas | no |
-| MySQL, SQLite, SQL Server or other SQL dialects | no: refused (`docs/PLAN.md` 3.3) |
+| Task | evolve-lang? | Steps |
+|---|---|---|
+| a schema change while old application versions still run | yes (S4) | `addColumn`, `installSync`, `backfill`, `deploy`, `retire`, `dropSync`, `dropColumn` |
+| a multi-tenant rollout with tenants at mixed stages | yes (S4) | `deploy`, `retire` |
+| a resumable backfill | yes (S6) | `backfill` |
+| NOT NULL by CHECK NOT VALID, then VALIDATE | yes (S6) | `addNotNullCheck`, `validate`, `setNotNull`, `dropCheck` |
+| an index build that does not block writes | yes (S6) | `createIndexConcurrently` |
+| ad hoc SQL, data analysis, one-off local schemas | no | |
+| MySQL, SQLite, SQL Server or other SQL dialects | no: refused (`docs/PLAN.md` 3.3) | |
+
+The Steps column names the `Step` constructors (`langc list-steps`) that
+a protocol for the task uses. The gate checks that each name is a step,
+that each of the 12 steps is in the column, and that each yes row has a
+slice tag.
+
+Prisma ORM 8 (renamed from Prisma Next) is a release candidate: 8.0.0-rc.29
+on 2026-10-30 (https://www.prisma.io/docs/orm/release-status). This README
+makes no claim about its features (`docs/PLAN.md` O7).
 
 ## Files
 
@@ -64,6 +79,8 @@ A native PostgreSQL server run is still open (`docs/PLAN.md` O19).
 - `docs/PLAN.md`: rulings, the R1 reading, the base signature, the
   transition model, targets, laws, agent adoption, slices and questions.
 - `AGENTS.md`: how an agent uses this repository.
+- `skills/evolve-lang/SKILL.md` and `examples/agent/`: the agent skill and
+  its 5 graded examples.
 - `SPEC.md`, `formers/`, `probe/`, `domain/`, `docs/STATUS.md`,
   `docs/VALIDATION.md`, `docs/host/README.md`: the kit files. The slices
   fill them.

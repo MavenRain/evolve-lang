@@ -3,14 +3,17 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "codes.h"
 #include "front/check.h"
 #include "front/fmt.h"
 #include "front/front.h"
 #include "front/lower.h"
 #include "front/parser.h"
 #include "json.h"
+#include "mcp.h"
 #include "oracle.h"
 #include "sql.h"
+#include "steps.h"
 #include "target.h"
 
 #define ARENA_LIMIT_BYTES ((size_t)1 << 30)
@@ -26,7 +29,10 @@ typedef enum {
   CMD_BUILD,
   CMD_FMT,
   CMD_SQL,
-  CMD_WASM
+  CMD_WASM,
+  CMD_MCP,
+  CMD_EXPLAIN_CODE,
+  CMD_LIST_STEPS
 } Command;
 
 typedef struct {
@@ -34,6 +40,7 @@ typedef struct {
   const char *prog_path;
   const char *entry;
   const char *protocol;
+  const char *code;
   char **args;
   int arg_count;
   const char *out_path;
@@ -54,6 +61,9 @@ static const struct {
   {"fmt", CMD_FMT},
   {"sql", CMD_SQL},
   {"wasm", CMD_WASM},
+  {"mcp", CMD_MCP},
+  {"explain-code", CMD_EXPLAIN_CODE},
+  {"list-steps", CMD_LIST_STEPS},
 };
 
 static int usage(FILE *err) {
@@ -65,7 +75,10 @@ static int usage(FILE *err) {
         "       langc build PROG -o OUT [--runtime]\n"
         "       langc fmt PROG\n"
         "       langc sql PROG PROTOCOL OUTDIR\n"
-        "       langc wasm PROG PROTOCOL -o OUT\n", err);
+        "       langc wasm PROG PROTOCOL -o OUT\n"
+        "       langc mcp\n"
+        "       langc explain-code CODE\n"
+        "       langc list-steps\n", err);
   return 2;
 }
 
@@ -93,7 +106,9 @@ static int parse_build_options(int argc, char **argv, Options *opt, Diag *diag) 
 
 static int parse_options(int argc, char **argv, Options *opt, Diag *diag) {
   memset(opt, 0, sizeof *opt);
-  if (argc < 3 || !find_command(argv[1], &opt->command)) {
+  /* mcp and list-steps take no argument; explain-code takes a code. */
+  if (argc < 2 || !find_command(argv[1], &opt->command) ||
+      (argc < 3 && opt->command != CMD_MCP && opt->command != CMD_EXPLAIN_CODE && opt->command != CMD_LIST_STEPS)) {
     return diag_fail(diag, "USAGE", NULL, "expected a command and a program path");
   }
   opt->json = opt->command == CMD_CHECK && strcmp(argv[2], "--json") == 0;
@@ -129,6 +144,14 @@ static int parse_options(int argc, char **argv, Options *opt, Diag *diag) {
       return 1;
     case CMD_BUILD:
       return parse_build_options(argc, argv, opt, diag);
+    case CMD_MCP:
+      return argc == 2 ? 1 : diag_fail(diag, "USAGE", NULL, "mcp takes no arguments");
+    case CMD_EXPLAIN_CODE:
+      if (argc != 3) return diag_fail(diag, "USAGE", NULL, "explain-code needs one code");
+      opt->code = argv[2];
+      return 1;
+    case CMD_LIST_STEPS:
+      return argc == 2 ? 1 : diag_fail(diag, "USAGE", NULL, "list-steps takes no arguments");
   }
   return 0;
 }
@@ -169,6 +192,9 @@ static int run_target(const Options *opt, Machine *machine, Diag *diag) {
     case CMD_FMT:
     case CMD_SQL:
     case CMD_WASM:
+    case CMD_MCP:
+    case CMD_EXPLAIN_CODE:
+    case CMD_LIST_STEPS:
       break;
   }
   out = fopen(opt->out_path, "wb");
@@ -196,6 +222,9 @@ static int run(const Options *opt, Arena *arena, Diag *diag) {
     case CMD_FMT: /* run_fmt does fmt */
     case CMD_SQL: /* run_sql does sql */
     case CMD_WASM: /* run_wasm does wasm */
+    case CMD_MCP:  /* mcp_serve does mcp */
+    case CMD_EXPLAIN_CODE: /* run_explain_code does explain-code */
+    case CMD_LIST_STEPS: /* run_list_steps does list-steps */
       break;
   }
   return run_target(opt, &machine, diag);
@@ -325,59 +354,59 @@ static void check_source(const Options *opt, Arena *arena, Diag *diag, Report *r
 }
 
 /* The lines of `check --json`: the error, the warning, the progress line. */
-static void print_check_json(const Diag *diag, const Checked *c) {
-  if (diag->set) diag_print_json(diag, stdout);
-  if (c->warn.set) diag_print_json(&c->warn, stdout);
-  print_progress(&c->front, &c->machine, c->parsed, c->typed, stdout);
+static void print_check_json(const Diag *diag, const Checked *c, FILE *out) {
+  if (diag->set) diag_print_json(diag, out);
+  if (c->warn.set) diag_print_json(&c->warn, out);
+  print_progress(&c->front, &c->machine, c->parsed, c->typed, out);
 }
 
 /* `check` in both modes: the error (at most one), then the W_NONCANON
    warning (at most one), then `ok` (text) or the progress line (JSON). A
    warning does not change the exit code. */
-static int run_check(const Options *opt, Arena *arena, Diag *diag) {
+static int run_check(const Options *opt, Arena *arena, Diag *diag, FILE *out, FILE *err) {
   Checked c;
   check_source(opt, arena, diag, NULL, &c);
   if (opt->json) {
-    print_check_json(diag, &c);
+    print_check_json(diag, &c, out);
   } else {
-    if (diag->set) diag_print(diag, stderr);
-    if (c.warn.set) diag_print(&c.warn, stderr);
-    if (c.typed) puts("ok");
+    if (diag->set) diag_print(diag, err);
+    if (c.warn.set) diag_print(&c.warn, err);
+    if (c.typed) fputs("ok\n", out);
   }
   return c.typed ? 0 : c.loaded ? 1 : 2;
 }
 
-/* `report`: one JSON document for the protocol OPT->protocol on stdout. A
+/* `report`: one JSON document for the protocol OPT->protocol on OUT. A
    program that is not checked gives the `check --json` lines (exit 1, or 2
    when it cannot be read). A program with no such protocol is a usage error
-   (exit 2). The W_NONCANON warning goes to stderr as text, so stdout stays
-   one document. */
-static int run_report(const Options *opt, Arena *arena, Diag *diag) {
+   (exit 2). The W_NONCANON warning goes to ERR as text, so OUT stays one
+   document. */
+static int run_report(const Options *opt, Arena *arena, Diag *diag, FILE *out, FILE *err) {
   Report report;
   memset(&report, 0, sizeof report);
   report.protocol = opt->protocol;
   Checked c;
   check_source(opt, arena, diag, &report, &c);
   if (!c.typed) {
-    print_check_json(diag, &c);
+    print_check_json(diag, &c, out);
     return c.loaded ? 1 : 2;
   }
   int found = report.found || diag_fail(diag, "USAGE", NULL, "%s has no protocol %s", opt->prog_path, opt->protocol);
-  if (diag->set) diag_print(diag, stderr);
-  if (c.warn.set) diag_print(&c.warn, stderr);
+  if (diag->set) diag_print(diag, err);
+  if (c.warn.set) diag_print(&c.warn, err);
   if (!found) return 2;
   char progress[PROGRESS_MAX_BYTES];
   progress_text(&c.front, &c.machine, c.parsed, c.typed, progress, sizeof progress);
-  JsonOut out;
-  json_out_init(&out, arena, diag, NULL);
-  if (!json_report(&out, &report, progress)) {
-    diag_print(diag, stderr);
+  JsonOut doc;
+  json_out_init(&doc, arena, diag, NULL);
+  if (!json_report(&doc, &report, progress)) {
+    diag_print(diag, err);
     return 2;
   }
-  size_t written = fwrite(out.data, 1, out.len, stdout);
-  if (written != out.len || fflush(stdout) != 0) {
+  size_t written = fwrite(doc.data, 1, doc.len, out);
+  if (written != doc.len || fflush(out) != 0) {
     diag_fail(diag, "IO", NULL, "cannot write the report");
-    diag_print(diag, stderr);
+    diag_print(diag, err);
     return 2;
   }
   return 0;
@@ -415,9 +444,9 @@ static int run_wasm(const Options *opt, Arena *arena, Diag *diag) {
   return status;
 }
 
-/* Lexes and parses the program only (no domain, no check), then prints the
-   canonical text. */
-static int run_fmt(const Options *opt, Arena *arena, Diag *diag) {
+/* Lexes and parses the program only (no domain, no check), then writes the
+   canonical text to OUT. */
+static int fmt_source(const Options *opt, Arena *arena, Diag *diag, FILE *out) {
   char *text = NULL;
   size_t len = 0;
   if (!read_source(arena, opt->prog_path, &text, &len, diag)) return 2;
@@ -425,14 +454,104 @@ static int run_fmt(const Options *opt, Arena *arena, Diag *diag) {
   DeclList decls = {NULL, 0, 0};
   if (!lex_source(arena, opt->prog_path, text, len, &toks, diag)) return 1;
   if (!parse_source(arena, opt->prog_path, ORIGIN_PROGRAM, &toks, &decls, diag)) return 1;
-  FmtText out;
-  fmt_text_init(&out, arena);
-  if (!fmt_program(&out, decls.items, decls.count, &toks)) {
+  FmtText canon;
+  fmt_text_init(&canon, arena);
+  if (!fmt_program(&canon, decls.items, decls.count, &toks)) {
     return diag_fail(diag, "OOM", NULL, "no memory for the canonical text of %s", opt->prog_path) + 2;
   }
-  size_t written = out.len == 0 ? 0 : fwrite(out.data, 1, out.len, stdout);
-  if (written != out.len || fflush(stdout) != 0) return diag_fail(diag, "IO", NULL, "cannot write the canonical text") + 2;
+  size_t written = canon.len == 0 ? 0 : fwrite(canon.data, 1, canon.len, out);
+  if (written != canon.len || fflush(out) != 0) return diag_fail(diag, "IO", NULL, "cannot write the canonical text") + 2;
   return 0;
+}
+
+/* `fmt`: the canonical text on OUT, or the error on ERR. */
+static int run_fmt(const Options *opt, Arena *arena, Diag *diag, FILE *out, FILE *err) {
+  int status = fmt_source(opt, arena, diag, out);
+  if (status != 0 && diag->set) diag_print(diag, err);
+  return status;
+}
+
+/* Writes TEXT as a JSON string by the rule of json_escape. */
+static void put_json_string(const char *text, FILE *out) {
+  fputc('"', out);
+  for (const char *s = text; *s != '\0';) {
+    char esc[JSON_ESCAPE_MAX];
+    size_t len;
+    s += json_escape(s, esc, &len);
+    fwrite(esc, 1, len, out);
+  }
+  fputc('"', out);
+}
+
+/* Exit 0, or exit 2 with the IO error on ERR when OUT cannot be written. */
+static int flush_out(Diag *diag, FILE *out, FILE *err) {
+  if (fflush(out) == 0 && !ferror(out)) return 0;
+  diag_fail(diag, "IO", NULL, "cannot write the output");
+  diag_print(diag, err);
+  return 2;
+}
+
+/* `explain-code`: the row of the code as one JSON line on OUT (Q-S8-7 (a)),
+   or the USAGE error on ERR when no row has that code. */
+static int run_explain_code(const Options *opt, Diag *diag, FILE *out, FILE *err) {
+  const CodeRow *row = code_find(opt->code);
+  if (row == NULL) {
+    diag_fail(diag, "USAGE", NULL, "unknown code '%s'", opt->code);
+    diag_print(diag, err);
+    return 2;
+  }
+  fputs("{\"code\":", out);
+  put_json_string(row->code, out);
+  fputs(",\"severity\":", out);
+  put_json_string(row->severity, out);
+  fputs(",\"stage\":", out);
+  put_json_string(row->stage, out);
+  fputs(",\"meaning\":", out);
+  put_json_string(row->meaning, out);
+  fputs("}\n", out);
+  return flush_out(diag, out, err);
+}
+
+/* `list-steps`: one JSON line {"step","form"} on OUT for each Step
+   constructor, in the domain order (Q-S8-8 (a)). */
+static int run_list_steps(Diag *diag, FILE *out, FILE *err) {
+  for (size_t i = 0; i < step_count(); i++) {
+    const StepRow *row = step_at(i);
+    fputs("{\"step\":", out);
+    put_json_string(row->step, out);
+    fputs(",\"form\":", out);
+    put_json_string(row->form, out);
+    fputs("}\n", out);
+  }
+  return flush_out(diag, out, err);
+}
+
+/* The verbs of `langc mcp` (mcp.h): TOOL with fresh Options and a fresh
+   Arena, as the CLI runs it, on OUT and ERR. ARG is the program path, the
+   code of explain-code, or NULL for list-steps (Q-S8-15 (a)). */
+static int run_tool(McpTool tool, const char *arg, const char *protocol, FILE *out, FILE *err) {
+  Options opt;
+  memset(&opt, 0, sizeof opt);
+  opt.command = tool == MCP_TOOL_FMT            ? CMD_FMT
+                : tool == MCP_TOOL_REPORT       ? CMD_REPORT
+                : tool == MCP_TOOL_EXPLAIN_CODE ? CMD_EXPLAIN_CODE
+                : tool == MCP_TOOL_LIST_STEPS   ? CMD_LIST_STEPS
+                                                : CMD_CHECK;
+  opt.prog_path = opt.command == CMD_EXPLAIN_CODE ? NULL : arg;
+  opt.code = opt.command == CMD_EXPLAIN_CODE ? arg : NULL;
+  opt.protocol = protocol;
+  opt.json = tool == MCP_TOOL_CHECK;
+  Diag diag;
+  diag_init(&diag);
+  Arena arena;
+  arena_init(&arena, ARENA_LIMIT_BYTES);
+  int status = tool == MCP_TOOL_FMT            ? run_fmt(&opt, &arena, &diag, out, err)
+               : tool == MCP_TOOL_REPORT       ? run_report(&opt, &arena, &diag, out, err)
+               : tool == MCP_TOOL_EXPLAIN_CODE ? run_explain_code(&opt, &diag, out, err)
+               : tool == MCP_TOOL_LIST_STEPS   ? run_list_steps(&diag, out, err)
+                                               : run_check(&opt, &arena, &diag, out, err);
+  arena_release(&arena);
+  return status;
 }
 
 int main(int argc, char **argv) {
@@ -443,17 +562,22 @@ int main(int argc, char **argv) {
     diag_print(&diag, stderr);
     return usage(stderr);
   }
+  if (opt.command == CMD_MCP) return mcp_serve(stdin, stdout, run_tool);
   Arena arena;
   arena_init(&arena, ARENA_LIMIT_BYTES);
-  int status = opt.command == CMD_FMT      ? run_fmt(&opt, &arena, &diag)
-               : opt.command == CMD_CHECK  ? run_check(&opt, &arena, &diag)
-               : opt.command == CMD_REPORT ? run_report(&opt, &arena, &diag)
-               : opt.command == CMD_SQL    ? run_sql(&opt, &arena, &diag)
-               : opt.command == CMD_WASM   ? run_wasm(&opt, &arena, &diag)
-                                           : run(&opt, &arena, &diag);
+  int status = opt.command == CMD_FMT            ? run_fmt(&opt, &arena, &diag, stdout, stderr)
+               : opt.command == CMD_CHECK        ? run_check(&opt, &arena, &diag, stdout, stderr)
+               : opt.command == CMD_REPORT       ? run_report(&opt, &arena, &diag, stdout, stderr)
+               : opt.command == CMD_SQL          ? run_sql(&opt, &arena, &diag)
+               : opt.command == CMD_WASM         ? run_wasm(&opt, &arena, &diag)
+               : opt.command == CMD_EXPLAIN_CODE ? run_explain_code(&opt, &diag, stdout, stderr)
+               : opt.command == CMD_LIST_STEPS   ? run_list_steps(&diag, stdout, stderr)
+                                                 : run(&opt, &arena, &diag);
   arena_release(&arena);
-  /* run_check, run_report, run_sql and run_wasm print their own diagnostics. */
-  int printed = opt.command == CMD_CHECK || opt.command == CMD_REPORT || opt.command == CMD_SQL || opt.command == CMD_WASM;
+  /* run_fmt, run_check, run_report, run_sql, run_wasm, run_explain_code and
+     run_list_steps print their own diagnostics. */
+  int printed = opt.command == CMD_FMT || opt.command == CMD_CHECK || opt.command == CMD_REPORT || opt.command == CMD_SQL ||
+                opt.command == CMD_WASM || opt.command == CMD_EXPLAIN_CODE || opt.command == CMD_LIST_STEPS;
   if (status != 0 && diag.set && !printed) diag_print(&diag, stderr);
   return status;
 }

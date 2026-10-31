@@ -115,6 +115,22 @@ void diag_print(const Diag *diag, FILE *out) {
   fprintf(out, "langc: %s: %s: %s\n", diag->code, diag->def, diag->msg);
 }
 
+size_t utf8_char_size(const char *text, size_t len) {
+  if (len == 0) return 0;
+  unsigned char c = (unsigned char)text[0];
+  size_t width = c < 0x80 ? 1 : c >= 0xc2 && c <= 0xdf ? 2
+    : c >= 0xe0 && c <= 0xef ? 3 : c >= 0xf0 && c <= 0xf4 ? 4 : 0;
+  if (width == 0 || width > len) return 0;
+  for (size_t i = 1; i < width; i++)
+    if (((unsigned char)text[i] & 0xc0) != 0x80) return 0;
+  if (width >= 3) {
+    unsigned char next = (unsigned char)text[1];
+    if ((c == 0xe0 && next < 0xa0) || (c == 0xed && next >= 0xa0)
+        || (c == 0xf0 && next < 0x90) || (c == 0xf4 && next >= 0x90)) return 0;
+  }
+  return width;
+}
+
 /* Width of one valid UTF-8 scalar, or zero for an invalid byte sequence. */
 static size_t json_utf8_width(const unsigned char *s) {
   size_t width = *s >= 0xc2 && *s <= 0xdf ? 2
