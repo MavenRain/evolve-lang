@@ -59,6 +59,14 @@ build/readme-test: test/readme.c
 	mkdir -p build
 	$(TCC) $(CFLAGS) -o build/readme-test test/readme.c
 
+build/tokcount: test/tokcount.c
+	mkdir -p build
+	$(TCC) $(CFLAGS) -o build/tokcount test/tokcount.c
+
+build/tokcount-io: test/tokcount-io.c
+	mkdir -p build
+	$(TCC) $(CFLAGS) -o build/tokcount-io test/tokcount-io.c
+
 check-clang: build/domain.c build/prelude.c
 	$(CC) $(CLANG_FLAGS) $(SRC) build/domain.c build/prelude.c
 	$(CC) $(CLANG_FLAGS) $(FRONT_TOOL)
@@ -70,8 +78,10 @@ check-clang: build/domain.c build/prelude.c
 	$(CC) $(CLANG_FLAGS) $(VERBS_TEST)
 	$(CC) $(CLANG_FLAGS) test/skill.c
 	$(CC) $(CLANG_FLAGS) test/readme.c
+	$(CC) $(CLANG_FLAGS) test/tokcount.c
+	$(CC) $(CLANG_FLAGS) test/tokcount-io.c
 
-check: build/langc build/fronttool build/diagnostics build/cubical build/sql-writer build/oracle-writer build/mcp-test build/verbs-test build/skill-test build/readme-test check-clang
+check: build/langc build/fronttool build/diagnostics build/cubical build/sql-writer build/oracle-writer build/mcp-test build/verbs-test build/skill-test build/readme-test build/tokcount build/tokcount-io check-clang
 	sh test/gate.sh
 	sh test/review.sh
 	build/fronttool

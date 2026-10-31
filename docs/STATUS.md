@@ -1394,3 +1394,143 @@ also exits 0 on `README.md`.
 - The server keeps no session state. It answers `tools/call` also before
   `initialize`.
 - S9 (PLAN 9): `docs/TOKEN-BASELINE.md` and its script.
+
+## S9: the token baseline (`build/tokcount`)
+
+S9 adds the token baseline (PLAN 7, bullet 6). `build/tokcount` counts the
+bytes, the code points and the tokens of the rename of PLAN 4.6 in
+evolve-lang, Python and Rust, with two fixed offline rules (PLAN Q12 (a)).
+`docs/TOKEN-BASELINE.md` gives the task, the files, the rules and the
+table. The gate makes the table again and compares it with the file. The
+counts and the ratios are only in `docs/TOKEN-BASELINE.md` (Q-S9-6 (a)).
+
+### Source
+- Port (PLAN 8): rule A is the rule of leaf-lang 2fa3ea9
+  `test/tokcount.c`, and rule B is the word rule of quorum-lang 0c729b6
+  `test/tokproxy.c`. A control byte is 0 tokens in the two rules (the
+  leaf-lang rule).
+- New: `test/tokcount.c`, `test/tokcount-io.c`, `test/baseline/rename-ascii.lang`,
+  `test/baseline/rename.py`, `test/baseline/rename.rs` and
+  `docs/TOKEN-BASELINE.md`. S9 changes 5 files and adds 6 files. It
+  removes no file.
+
+### Units
+- U0, the count tool (Q-S9-1 (c), Q-S9-2 (a)): `test/tokcount.c` and the
+  Makefile lines (`build/tokcount`, and `check-clang` compiles it).
+  `build/tokcount FILE...` writes a table with the columns bytes, code
+  points, tokens A and tokens B, a blank line, and for each file after
+  the first a ratio line for A and a ratio line for B (half up, 2
+  decimals, integer arithmetic). `build/tokcount --check DOC FILE...`
+  makes the same text and compares it with the lines between the tokcount
+  markers of DOC. It also checks the half-up rule on fixed pairs, runs
+  `build/langc check` on each `.lang` file and compares `build/langc fmt`
+  of each `.lang` file after the first with the first file (Q-S9-3 (a)).
+  It writes a FAIL line for each mismatch, then the count line. The gate
+  counts are those of S8.
+- U1, the samples, the doc and the gate line (Q-S9-3 to Q-S9-6 (a)):
+  `test/baseline/rename-ascii.lang` is `examples/rename.lang` with the
+  ASCII aliases of SPEC 2.3, and `langc fmt` of it is
+  `examples/rename.lang`, byte for byte. `test/baseline/rename.py` and
+  `test/baseline/rename.rs` have the data of the rename, a model of the
+  check and its tests (Q-S9-4 (a)). `docs/TOKEN-BASELINE.md` has the
+  region that `build/tokcount` writes. The gate runs the check, and it
+  does not run the two samples (Q-S9-5 (a)).
+- U2, the mutants and the docs (Q-S9-7 (a)): the mutants M1 to M10; PLAN
+  9, the S9 row; the README; this section. SPEC.md does not change:
+  `build/tokcount` is a test tool, not a `langc` verb.
+
+### Hand run and cross-check (not in the gate)
+- The hand run, once (Q-S9-5 (a)): `python3 test/baseline/rename.py`
+  exits 0 with no output. `rustc --edition 2021 --test
+  test/baseline/rename.rs` builds with no warning, and the 6 tests pass
+  (python3 3.15.0, rustc 1.96.0-nightly cf7da0b72 2026-03-30).
+- The cross-check (Q-S9-1 (c)): column A against leaf-lang
+  `build/tokcount` and column B against quorum-lang `build/tokproxy` on
+  the same 4 files. The counts are equal (0 differences). The bytes and
+  the code points of leaf-lang are equal too.
+
+### Gate counts against S8
+
+| Count | S8 (8c5d8e1) | S9 |
+|---|---|---|
+| examples | 12 | 12 |
+| parse refusals | 11 | 11 |
+| check refusals | 80 | 80 |
+| evals | 254 | 254 |
+| ir lowered | 12 | 12 |
+| wasm modules | 16 | 16 |
+| differential cases (0 mismatches) | 892 | 892 |
+| oracle golden modules, calls (0 mismatches) | 6, 175 | 6, 175 |
+| oracle differential cases (0 mismatches) | 143 | 143 |
+| fmt canonical, non-canonical pairs | 173, 8 | 173, 8 |
+| json fixtures | 38 | 38 |
+| diagnostics codes (fixture, no fixture) | 53 (36, 17) | 53 (36, 17) |
+| golden reports | 6 | 6 |
+| golden SQL protocols, files | 10, 60 | 10, 60 |
+| mcp requests (0 mismatches), examples | 33, 5 | 33, 5 |
+| explain-code codes | 53 | 53 |
+| list-steps steps | 12 | 12 |
+| skill examples, outputs | 5, 5 | 5, 5 |
+| readme rows, steps named; agents verbs | 7, 12; 12 | 7, 12; 12 |
+| tokens files, rules, ratios (0 mismatches) | none | 4, 2, 6 |
+| tokens IO regression cases (0 failures) | none | 5 |
+| cubical checks, round trips | 52, 29 | 52, 29 |
+| json writer regressions | 21 | 21 |
+| report guard regressions | 4 | 4 |
+| sql writer regressions | 4 | 4 |
+| sql protocol regressions | 13 | 13 |
+
+The gate has 0 failures, and no line is a FAIL line. The 33 count lines of
+S8 are the same, in the same order. The new `tokens` line comes after the
+`readme` line, followed by the `tokens IO regressions` line. The review,
+domain and diagnostic edit regressions pass.
+
+### Op values
+51 Op values. S9 adds no Op. `src/` and the kernel do not change.
+
+### Mutants
+Each mutant makes one change, then `make -B` of `build/tokcount` and the
+check that kills it. Each mutant is KILLED. After each mutant the file is
+restored, `cmp` with its backup is equal, and the check passes again.
+
+| Mutant | Site | Result |
+|---|---|---|
+| M1 | `test/tokcount.c` `end_run`: a word run is 2 tokens A | KILLED by the region compare (line 71) |
+| M2 | `test/tokcount.c` `count_file`: a byte from 0x80 is 0 tokens | KILLED by the region compare (line 71) |
+| M3 | `test/tokcount.c` `count_file`: a UTF-8 continuation byte is 0 tokens | KILLED by the region compare (line 71) |
+| M4 | `test/tokcount.c` `ratio`: the ratio truncates | KILLED by the half-up check (`201 over 200 gives 1.00, not 1.01`) and the region compare (line 79) |
+| M5 | `test/tokcount.c` `main`: the check drops the last FILE | KILLED by the region compare (line 74) |
+| M6 | `test/tokcount.c` `make_text`: rows 1 and 2 change places | KILLED by the region compare (line 71) |
+| M7 | `test/tokcount.c` `check_lang`: the check skips the `langc fmt` compare | KILLED by a copy of the ASCII file (see below) |
+| M8 | a copy of `docs/TOKEN-BASELINE.md`: one count is 1 more | KILLED by the region compare (line 71) |
+| M9 | `test/tokcount.c` `end_run`: rule B rounds down, (L + 2) / 4 | KILLED by the region compare (line 71) |
+| M10 | `test/tokcount.c` `make_text`: the columns A and B change places | KILLED by the region compare (line 71) |
+
+M7 changes the gate check, not the counts. The killer is a copy of
+`test/baseline/rename-ascii.lang` with one word of the first comment
+changed (`build/langc check` of the copy exits 0), and a copy of
+`docs/TOKEN-BASELINE.md` whose region is the table of the 4 files with
+the copy in place of the ASCII file. The unchanged `build/tokcount
+--check` of the two copies exits 1 with one FAIL line: `build/langc fmt
+COPY is not examples/rename.lang`. The mutant exits 0 on the copies, and
+it also exits 0 on the files of the gate.
+
+### Review fixes
+- Both counter modes flush stdout and detect buffered write failures
+  before returning success. A write failure exits 2 with a diagnostic.
+- The document reader rejects embedded NUL bytes, so extra bytes after a
+  NUL cannot bypass the table comparison.
+- `test/tokcount-io.c` exercises the CLI on valid table and check commands,
+  unwritable stdout in both modes and a document with hidden bytes. The
+  last three cases failed on the original counter and pass with the fixes.
+  `make check` builds and runs these regressions and checks their C syntax.
+
+### Open items from S9
+- Q-S9-1 to Q-S9-7 are RULED (USER 2026-10-31). No O item closes or
+  opens (PLAN section 10).
+- The gate does not kill M7: the ASCII file of the gate gives
+  `examples/rename.lang` after `langc fmt`, so only a copy kills it.
+- The gate does not run the Python and Rust samples (Q-S9-5 (a)). This
+  section records the hand run.
+- S10 (PLAN 9): the close (`docs/STATUS.md`, `docs/VALIDATION.md`, the
+  full gate, the mutant summary).

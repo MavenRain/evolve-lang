@@ -10,7 +10,7 @@ TinyCC. The JSON compatibility report (S5), the PostgreSQL SQL stage files
 (S6), the Wasm compatibility oracle module (S7) and the agent kit (S8) are
 built.
 
-## Status (S8)
+## Status (S9)
 
 S1 gives the evolve-lang surface on the tcc-wasm kit of lang-template: the
 Agda-like syntax with ASCII aliases (`SPEC.md` section 2), `langc fmt`,
@@ -39,7 +39,10 @@ protocol, for an agent or a CI job with no C toolchain. S8 adds the agent
 kit: `langc explain-code CODE` (`SPEC.md` 6.5), `langc list-steps`
 (`SPEC.md` 6.6), the MCP server `langc mcp` (`SPEC.md` 6.7, protocol
 revision 2025-11-25), `skills/evolve-lang/SKILL.md` and the 5 graded
-examples of `examples/agent/`. `make check` passes.
+examples of `examples/agent/`. S9 adds the token baseline
+`docs/TOKEN-BASELINE.md` (PLAN 7, bullet 6): the token counts of the
+rename of PLAN 4.6 in evolve-lang, Python and Rust, and the count tool
+`build/tokcount`. `make check` passes.
 `docs/PLAN.md` section 9 gives the slices, and `docs/STATUS.md` gives the state.
 
 evolve-lang does not promise zero downtime. The checker proves
@@ -78,6 +81,7 @@ makes no claim about its features (`docs/PLAN.md` O7).
   verbatim.
 - `docs/PLAN.md`: rulings, the R1 reading, the base signature, the
   transition model, targets, laws, agent adoption, slices and questions.
+- `docs/TOKEN-BASELINE.md`: the token baseline (PLAN 7, bullet 6).
 - `AGENTS.md`: how an agent uses this repository.
 - `skills/evolve-lang/SKILL.md` and `examples/agent/`: the agent skill and
   its 5 graded examples.

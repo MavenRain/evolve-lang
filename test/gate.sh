@@ -487,6 +487,20 @@ build/skill-test || fail=$((fail + 1))
 # It prints FAIL lines, then the count line.
 build/readme-test || fail=$((fail + 1))
 
+# The token baseline (Q-S9-1 (c), Q-S9-2 (a), Q-S9-3 (a)). `build/tokcount
+# --check` compares its table of the 4 files with the region between the
+# tokcount markers of docs/TOKEN-BASELINE.md, checks the half-up rule on
+# fixed pairs, runs `build/langc check` on the 2 .lang files and compares
+# `build/langc fmt` of the ASCII file with examples/rename.lang. It prints
+# FAIL lines, then the count line.
+build/tokcount --check docs/TOKEN-BASELINE.md examples/rename.lang \
+  test/baseline/rename-ascii.lang test/baseline/rename.py \
+  test/baseline/rename.rs || fail=$((fail + 1))
+
+# Check the counter's CLI on valid input, unwritable stdout in both modes
+# and a document with extra bytes hidden after a NUL.
+build/tokcount-io || fail=$((fail + 1))
+
 rm -rf "$tmp"
 
 if rg -n '\x{2013}|\x{2014}' . >/dev/null; then
