@@ -497,6 +497,30 @@ retiredGuards n m s0 s a live apps history liveAt cols g = eachApp n m (witness 
 stageGuard : (n : ℕ) → (m : ℕ) → (s0 : State n m) → (s : State n m) → (a : Chain n m s0 s) → (live : Live n) → (apps : Live n) → (liveAt : ℕ → ℕ → Bool) → (cols : Cols n) → Guard n m Unit
 stageGuard n m s0 s a live apps liveAt cols = retiredGuards n m s0 s a live apps (historyLive n apps liveAt (length n m s0 s a)) liveAt cols (barrierFills n m s0 s a cols (eachApp n m (witness apps) (λ (j : ℕ) (g : Guard n m Unit) → flagIf (boolAnd (liveAt (length n m s0 s a) j) (boolNot (isRefused n m (compat n m s0 s a live cols (payload apps j))))) (runtimeReads n m s0 s a (payload apps j) g) g) (barrierGuard n m s0 s a)))
 
+-- The oracle folds (S7 U1). `verdictCode n m v` is the code of v in a
+-- module cell (Q-S7-3 (a)): 0 compatible; 1 to 8 the refused Code in the
+-- domain order (dropRequired 1 .. renameInplace 8); 9 runtime.
+verdictCode : (n : ℕ) → (m : ℕ) → (v : Verdict n m) → ℕ
+verdictCode n m v = fold 0 (λ (c : Code) → fold 1 2 3 4 5 6 7 8 c) (λ (f : Fact n m) → 9) v
+
+-- `halfOdd x` is the pair of x divided by 2 (rounded down) and the bit 0 of
+-- x: a fold over x, because the prelude and the domain have no halving.
+halfOdd : (x : ℕ) → ℕ × Bool
+halfOdd x = fold (λ (p : ℕ × Bool) → flagIf (payload p) (pack (natAdd (witness p) 1) false) (pack (witness p) true)) (pack 0 false) x
+
+-- `guardWalk n m g k y` walks the facts of g in the need order: K is the
+-- index of the next fact, Y the mask bits from K up. The result is K + 1
+-- for the first fact with bit 0 in Y, else 0.
+guardWalk : (n : ℕ) → (m : ℕ) → (g : Guard n m Unit) → ℕ → ℕ → ℕ
+guardWalk n m g = fold (λ (a : Unit) (k : ℕ) (y : ℕ) → 0) (λ (f : Fact n m) (r : ℕ → ℕ → ℕ) (k : ℕ) (y : ℕ) → flagIf (payload (halfOdd y)) (r (natAdd k 1) (witness (halfOdd y))) (natAdd k 1)) g
+
+-- `guardFirst n m g x` is the first failed fact of g for the mask x
+-- (Q-S7-4 (a)): bit K of x (bit 0 first) is 1 when fact K holds. The result
+-- is K + 1 for the lowest K with bit K 0, else 0. A bit at K ≥ the fact
+-- count has no effect.
+guardFirst : (n : ℕ) → (m : ℕ) → (g : Guard n m Unit) → (x : ℕ) → ℕ
+guardFirst n m g x = guardWalk n m g 0 x
+
 -- The key range of one backfill batch (PLAN 5.3, Q-S6-12 (a)): the low key,
 -- then the high key.
 KeyRange : Type 0

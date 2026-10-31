@@ -1,0 +1,39 @@
+-- The oracle differential of the golden module single (S7 U3, Q-S7-6 (a)):
+-- the program of test/report/single.lang, then the chain of each stage before
+-- the last, one step a stage (Q-S3-27 (a)), and the entries verdict and
+-- guard. The gate runs each entry with `langc eval` and compares the result
+-- with the same call of test/wasm/single.wasm.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.id, reads users.name, inserts users.id, inserts users.name)
+
+protocol single where
+  addColumn users note text
+
+-- The program columns in the code order, the apps, liveAt and the live set
+-- of each stage (Q-S4-2 (a)): v1 is live at each stage.
+cols : Cols 3
+cols = pack 3 (λ (j : ℕ) → flagIf (natEq j 0) users_id (flagIf (natEq j 1) users_name users_note))
+
+appAt : ℕ → App 3
+appAt a = v1
+
+apps : Live 3
+apps = pack 1 (λ (j : ℕ) → v1)
+
+liveAt : ℕ → ℕ → Bool
+liveAt i j = true
+
+lives : ℕ → Live 3
+lives i = apps
+
+chain0 : Chain 3 1 single_0 single_0
+chain0 = nil 3 1 single_0
+
+-- verdict a i is the code of app a at stage i, live or not (Q-S5-9 (a)).
+verdict : ℕ → ℕ → ℕ
+verdict a i = verdictCode 3 1 (flagIf (natEq i 0) (compat 3 1 single_0 single_0 chain0 (lives i) cols (appAt a)) (compat 3 1 single_0 single_1 single (lives i) cols (appAt a)))
+
+-- guard i x is the first failed fact of stage i for the mask x.
+guard : ℕ → ℕ → ℕ
+guard i x = guardFirst 3 1 (flagIf (natEq i 0) (stageGuard 3 1 single_0 single_0 chain0 (lives i) apps liveAt cols) (stageGuard 3 1 single_0 single_1 single (lives i) apps liveAt cols)) x

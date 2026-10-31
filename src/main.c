@@ -9,6 +9,7 @@
 #include "front/lower.h"
 #include "front/parser.h"
 #include "json.h"
+#include "oracle.h"
 #include "sql.h"
 #include "target.h"
 
@@ -24,7 +25,8 @@ typedef enum {
   CMD_ABI,
   CMD_BUILD,
   CMD_FMT,
-  CMD_SQL
+  CMD_SQL,
+  CMD_WASM
 } Command;
 
 typedef struct {
@@ -51,6 +53,7 @@ static const struct {
   {"build", CMD_BUILD},
   {"fmt", CMD_FMT},
   {"sql", CMD_SQL},
+  {"wasm", CMD_WASM},
 };
 
 static int usage(FILE *err) {
@@ -61,7 +64,8 @@ static int usage(FILE *err) {
         "       langc abi PROG\n"
         "       langc build PROG -o OUT [--runtime]\n"
         "       langc fmt PROG\n"
-        "       langc sql PROG PROTOCOL OUTDIR\n", err);
+        "       langc sql PROG PROTOCOL OUTDIR\n"
+        "       langc wasm PROG PROTOCOL -o OUT\n", err);
   return 2;
 }
 
@@ -110,6 +114,13 @@ static int parse_options(int argc, char **argv, Options *opt, Diag *diag) {
       opt->protocol = argv[3];
       opt->out_path = argv[4];
       return 1;
+    case CMD_WASM:
+      if (argc != 6 || strcmp(argv[4], "-o") != 0) {
+        return diag_fail(diag, "USAGE", NULL, "wasm needs a program path, a protocol name and -o OUT");
+      }
+      opt->protocol = argv[3];
+      opt->out_path = argv[5];
+      return 1;
     case CMD_EVAL:
       if (argc < 4) return diag_fail(diag, "USAGE", NULL, "eval needs a definition name");
       opt->entry = argv[3];
@@ -157,6 +168,7 @@ static int run_target(const Options *opt, Machine *machine, Diag *diag) {
     case CMD_BUILD:
     case CMD_FMT:
     case CMD_SQL:
+    case CMD_WASM:
       break;
   }
   out = fopen(opt->out_path, "wb");
@@ -183,6 +195,7 @@ static int run(const Options *opt, Arena *arena, Diag *diag) {
     case CMD_BUILD:
     case CMD_FMT: /* run_fmt does fmt */
     case CMD_SQL: /* run_sql does sql */
+    case CMD_WASM: /* run_wasm does wasm */
       break;
   }
   return run_target(opt, &machine, diag);
@@ -387,6 +400,21 @@ static int run_sql(const Options *opt, Arena *arena, Diag *diag) {
   return status;
 }
 
+/* `wasm`: the oracle module of the protocol OPT->protocol in the file
+   OPT->out_path (oracle.h). The error paths are those of `sql`. */
+static int run_wasm(const Options *opt, Arena *arena, Diag *diag) {
+  Report report;
+  memset(&report, 0, sizeof report);
+  report.protocol = opt->protocol;
+  Checked c;
+  check_source(opt, arena, diag, &report, &c);
+  int found = c.typed && (report.found || diag_fail(diag, "USAGE", NULL, "%s has no protocol %s", opt->prog_path, opt->protocol));
+  int status = !c.typed ? (c.loaded ? 1 : 2) : !found ? 2 : oracle_write(arena, diag, &report, opt->out_path);
+  if (diag->set) diag_print(diag, stderr);
+  if (c.warn.set) diag_print(&c.warn, stderr);
+  return status;
+}
+
 /* Lexes and parses the program only (no domain, no check), then prints the
    canonical text. */
 static int run_fmt(const Options *opt, Arena *arena, Diag *diag) {
@@ -421,9 +449,11 @@ int main(int argc, char **argv) {
                : opt.command == CMD_CHECK  ? run_check(&opt, &arena, &diag)
                : opt.command == CMD_REPORT ? run_report(&opt, &arena, &diag)
                : opt.command == CMD_SQL    ? run_sql(&opt, &arena, &diag)
+               : opt.command == CMD_WASM   ? run_wasm(&opt, &arena, &diag)
                                            : run(&opt, &arena, &diag);
   arena_release(&arena);
-  /* run_check, run_report and run_sql print their own diagnostics. */
-  if (status != 0 && diag.set && opt.command != CMD_CHECK && opt.command != CMD_REPORT && opt.command != CMD_SQL) diag_print(&diag, stderr);
+  /* run_check, run_report, run_sql and run_wasm print their own diagnostics. */
+  int printed = opt.command == CMD_CHECK || opt.command == CMD_REPORT || opt.command == CMD_SQL || opt.command == CMD_WASM;
+  if (status != 0 && diag.set && !printed) diag_print(&diag, stderr);
   return status;
 }

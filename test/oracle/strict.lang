@@ -1,0 +1,69 @@
+-- The oracle differential of the golden module strict (S7 U3, Q-S7-6 (a)):
+-- the program of test/report/strict.lang, then the chain of each stage before
+-- the last, one step a stage (Q-S3-27 (a)), and the entries verdict and
+-- guard. The gate runs each entry with `langc eval` and compares the result
+-- with the same call of test/wasm/strict.wasm.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.id, reads users.name, inserts users.id, inserts users.name)
+
+app v2 (reads users.id, reads users.name, inserts users.id, inserts users.name, inserts users.handle)
+
+protocol strict where
+  addColumn users handle text
+  deploy v2
+  retire v1
+  backfill users handle ← name batch 500
+  addNotNullCheck users handle
+  validate users handle
+  setNotNull users handle
+  dropCheck users handle
+
+-- The program columns in the code order, the apps, liveAt and the live set
+-- of each stage (Q-S4-2 (a)).
+cols : Cols 3
+cols = pack 3 (λ (j : ℕ) → flagIf (natEq j 0) users_id (flagIf (natEq j 1) users_name users_handle))
+
+appAt : ℕ → App 3
+appAt a = flagIf (natEq a 0) v1 v2
+
+apps : Live 3
+apps = pack 2 (λ (j : ℕ) → appAt j)
+
+liveAt : ℕ → ℕ → Bool
+liveAt i j = flagIf (natEq j 0) (natLe i 2) (natLe 2 i)
+
+lives : ℕ → Live 3
+lives i = flagIf (natLe i 1) (pack 1 (λ (j : ℕ) → v1)) (flagIf (natEq i 2) apps (pack 1 (λ (j : ℕ) → v2)))
+
+chain0 : Chain 3 1 strict_0 strict_0
+chain0 = nil 3 1 strict_0
+
+chain1 : Chain 3 1 strict_0 strict_1
+chain1 = snoc 3 1 strict_0 strict_0 strict_1 chain0 (addColumn 3 1 strict_0 users users_handle text refl)
+
+chain2 : Chain 3 1 strict_0 strict_2
+chain2 = snoc 3 1 strict_0 strict_1 strict_2 chain1 (deploy 3 1 strict_1 v2)
+
+chain3 : Chain 3 1 strict_0 strict_3
+chain3 = snoc 3 1 strict_0 strict_2 strict_3 chain2 (retire 3 1 strict_2 v1)
+
+chain4 : Chain 3 1 strict_0 strict_4
+chain4 = snoc 3 1 strict_0 strict_3 strict_4 chain3 (backfill 3 1 strict_3 users users_handle users_name 500 refl)
+
+chain5 : Chain 3 1 strict_0 strict_5
+chain5 = snoc 3 1 strict_0 strict_4 strict_5 chain4 (addNotNullCheck 3 1 strict_4 users users_handle refl)
+
+chain6 : Chain 3 1 strict_0 strict_6
+chain6 = snoc 3 1 strict_0 strict_5 strict_6 chain5 (validate 3 1 strict_5 users users_handle refl)
+
+chain7 : Chain 3 1 strict_0 strict_7
+chain7 = snoc 3 1 strict_0 strict_6 strict_7 chain6 (setNotNull 3 1 strict_6 users users_handle refl)
+
+-- verdict a i is the code of app a at stage i, live or not (Q-S5-9 (a)).
+verdict : ℕ → ℕ → ℕ
+verdict a i = verdictCode 3 1 (flagIf (natEq i 0) (compat 3 1 strict_0 strict_0 chain0 (lives i) cols (appAt a)) (flagIf (natEq i 1) (compat 3 1 strict_0 strict_1 chain1 (lives i) cols (appAt a)) (flagIf (natEq i 2) (compat 3 1 strict_0 strict_2 chain2 (lives i) cols (appAt a)) (flagIf (natEq i 3) (compat 3 1 strict_0 strict_3 chain3 (lives i) cols (appAt a)) (flagIf (natEq i 4) (compat 3 1 strict_0 strict_4 chain4 (lives i) cols (appAt a)) (flagIf (natEq i 5) (compat 3 1 strict_0 strict_5 chain5 (lives i) cols (appAt a)) (flagIf (natEq i 6) (compat 3 1 strict_0 strict_6 chain6 (lives i) cols (appAt a)) (flagIf (natEq i 7) (compat 3 1 strict_0 strict_7 chain7 (lives i) cols (appAt a)) (compat 3 1 strict_0 strict_8 strict (lives i) cols (appAt a))))))))))
+
+-- guard i x is the first failed fact of stage i for the mask x.
+guard : ℕ → ℕ → ℕ
+guard i x = guardFirst 3 1 (flagIf (natEq i 0) (stageGuard 3 1 strict_0 strict_0 chain0 (lives i) apps liveAt cols) (flagIf (natEq i 1) (stageGuard 3 1 strict_0 strict_1 chain1 (lives i) apps liveAt cols) (flagIf (natEq i 2) (stageGuard 3 1 strict_0 strict_2 chain2 (lives i) apps liveAt cols) (flagIf (natEq i 3) (stageGuard 3 1 strict_0 strict_3 chain3 (lives i) apps liveAt cols) (flagIf (natEq i 4) (stageGuard 3 1 strict_0 strict_4 chain4 (lives i) apps liveAt cols) (flagIf (natEq i 5) (stageGuard 3 1 strict_0 strict_5 chain5 (lives i) apps liveAt cols) (flagIf (natEq i 6) (stageGuard 3 1 strict_0 strict_6 chain6 (lives i) apps liveAt cols) (flagIf (natEq i 7) (stageGuard 3 1 strict_0 strict_7 chain7 (lives i) apps liveAt cols) (stageGuard 3 1 strict_0 strict_8 strict (lives i) apps liveAt cols))))))))) x

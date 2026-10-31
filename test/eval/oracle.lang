@@ -1,0 +1,103 @@
+-- The oracle folds (S7 U1, Q-S7-3 (a), Q-S7-4 (a), Q-S7-6 (a)): verdictCode
+-- on each Verdict constructor and each Code, and guardFirst on masks. The
+-- entries cell and guard give one (app, stage) cell and the first failed
+-- fact of one stage of the protocol widen, as `langc eval` runs them for
+-- the oracle differential. The chains of the stages 0 .. 3 are written here
+-- by hand, one step a stage (Q-S3-27 (a)); the chain of stage 4 is widen.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.id, reads users.name, inserts users.id, inserts users.name)
+
+app v2 (reads users.id, reads users.full, inserts users.id, inserts users.full)
+
+protocol widen where
+  addColumn users full text
+  installSync users name full
+  backfill users full ← name batch 10
+  deploy v2
+
+-- The codes of closed verdicts: 0, then 1 .. 8 in the Code order, then 9.
+compatibleCode : ℕ
+compatibleCode = verdictCode 3 1 (compatible 3 1)
+
+dropRequiredCode : ℕ
+dropRequiredCode = verdictCode 3 1 (refused 3 1 dropRequired)
+
+missingColumnCode : ℕ
+missingColumnCode = verdictCode 3 1 (refused 3 1 missingColumn)
+
+staleReadCode : ℕ
+staleReadCode = verdictCode 3 1 (refused 3 1 staleRead)
+
+unfilledReadCode : ℕ
+unfilledReadCode = verdictCode 3 1 (refused 3 1 unfilledRead)
+
+nullInsertCode : ℕ
+nullInsertCode = verdictCode 3 1 (refused 3 1 nullInsert)
+
+stepIndexCode : ℕ
+stepIndexCode = verdictCode 3 1 (refused 3 1 stepIndex)
+
+lockScanCode : ℕ
+lockScanCode = verdictCode 3 1 (refused 3 1 lockScan)
+
+renameInplaceCode : ℕ
+renameInplaceCode = verdictCode 3 1 (refused 3 1 renameInplace)
+
+runtimeCode : ℕ
+runtimeCode = verdictCode 3 1 (runtime 3 1 (fleetAt 3 1 2))
+
+-- The halving fold: the quotient and bit 0.
+halfOf : ℕ → ℕ
+halfOf x = witness (halfOdd x)
+
+oddOf : ℕ → Bool
+oddOf x = payload (halfOdd x)
+
+-- A closed guard of three facts: fleetAt 2, retired 0, fleetAt 3.
+threeFacts : ℕ → ℕ
+threeFacts x = guardFirst 3 1 (need 3 1 Unit (fleetAt 3 1 2) (need 3 1 Unit (retired 3 1 0) (need 3 1 Unit (fleetAt 3 1 3) (done 3 1 Unit unit)))) x
+
+noFacts : ℕ → ℕ
+noFacts x = guardFirst 3 1 (done 3 1 Unit unit) x
+
+-- The program columns in the code order, the apps, the live sets and
+-- liveAt (Q-S4-2 (a)): v1 at each stage, v2 at stage 4 only.
+cols : Cols 3
+cols = pack 3 (λ (j : ℕ) → flagIf (natEq j 0) users_id (flagIf (natEq j 1) users_name users_full))
+
+appAt : ℕ → App 3
+appAt a = flagIf (natEq a 0) v1 v2
+
+liveV1 : Live 3
+liveV1 = pack 1 (λ (j : ℕ) → v1)
+
+apps : Live 3
+apps = pack 2 (λ (j : ℕ) → appAt j)
+
+liveAt : ℕ → ℕ → Bool
+liveAt i j = flagIf (natEq j 0) true (natEq i 4)
+
+chain0 : Chain 3 1 widen_0 widen_0
+chain0 = nil 3 1 widen_0
+
+chain1 : Chain 3 1 widen_0 widen_1
+chain1 = snoc 3 1 widen_0 widen_0 widen_1 chain0 (addColumn 3 1 widen_0 users users_full text refl)
+
+chain2 : Chain 3 1 widen_0 widen_2
+chain2 = snoc 3 1 widen_0 widen_1 widen_2 chain1 (installSync 3 1 widen_1 users users_name users_full refl)
+
+chain3 : Chain 3 1 widen_0 widen_3
+chain3 = snoc 3 1 widen_0 widen_2 widen_3 chain2 (backfill 3 1 widen_2 users users_full users_name 10 refl)
+
+-- cell a i is the code of app a at stage i, live or not (Q-S5-9 (a)).
+cell : ℕ → ℕ → ℕ
+cell a i = verdictCode 3 1 (flagIf (natEq i 0) (compat 3 1 widen_0 widen_0 chain0 liveV1 cols (appAt a)) (flagIf (natEq i 1) (compat 3 1 widen_0 widen_1 chain1 liveV1 cols (appAt a)) (flagIf (natEq i 2) (compat 3 1 widen_0 widen_2 chain2 liveV1 cols (appAt a)) (flagIf (natEq i 3) (compat 3 1 widen_0 widen_3 chain3 liveV1 cols (appAt a)) (compat 3 1 widen_0 widen_4 widen apps cols (appAt a))))))
+
+-- guard i x is the first failed fact of stage i for the mask x.
+guard : ℕ → ℕ → ℕ
+guard i x = guardFirst 3 1 (flagIf (natEq i 0) (stageGuard 3 1 widen_0 widen_0 chain0 liveV1 apps liveAt cols) (flagIf (natEq i 1) (stageGuard 3 1 widen_0 widen_1 chain1 liveV1 apps liveAt cols) (flagIf (natEq i 2) (stageGuard 3 1 widen_0 widen_2 chain2 liveV1 apps liveAt cols) (flagIf (natEq i 3) (stageGuard 3 1 widen_0 widen_3 chain3 liveV1 apps liveAt cols) (stageGuard 3 1 widen_0 widen_4 widen apps apps liveAt cols))))) x
+
+-- The guard size of stage i, for the masks.
+guardCount : ℕ → ℕ
+guardCount i = guardSize 3 1 Unit (flagIf (natEq i 3) (stageGuard 3 1 widen_0 widen_3 chain3 liveV1 apps liveAt cols) (stageGuard 3 1 widen_0 widen_4 widen apps apps liveAt cols))

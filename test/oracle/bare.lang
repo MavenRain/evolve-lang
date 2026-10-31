@@ -1,0 +1,49 @@
+-- The oracle differential of the golden module bare (S7 U3, Q-S7-6 (a)):
+-- the program of test/report/bare.lang, then the chain of each stage before
+-- the last, one step a stage (Q-S3-27 (a)), and the entries verdict and
+-- guard. The gate runs each entry with `langc eval` and compares the result
+-- with the same call of test/wasm/bare.wasm.
+table items (id : bigint key, label : text)
+
+protocol bare where
+  addColumn items note text
+  dropColumn items label
+
+-- The program has no app. nobody is an app with no column: it is the
+-- element type of the Live terms of length 0.
+noCols : Cols 3
+noCols = pack 0 (λ (j : ℕ) → items_id)
+
+nobody : App 3
+nobody = pack noCols (pack noCols noCols)
+
+-- The program columns in the code order, the apps, liveAt and the live set
+-- of each stage (Q-S4-2 (a)).
+cols : Cols 3
+cols = pack 3 (λ (j : ℕ) → flagIf (natEq j 0) items_id (flagIf (natEq j 1) items_label items_note))
+
+appAt : ℕ → App 3
+appAt a = nobody
+
+apps : Live 3
+apps = pack 0 (λ (j : ℕ) → nobody)
+
+liveAt : ℕ → ℕ → Bool
+liveAt i j = false
+
+lives : ℕ → Live 3
+lives i = apps
+
+chain0 : Chain 3 1 bare_0 bare_0
+chain0 = nil 3 1 bare_0
+
+chain1 : Chain 3 1 bare_0 bare_1
+chain1 = snoc 3 1 bare_0 bare_0 bare_1 chain0 (addColumn 3 1 bare_0 items items_note text refl)
+
+-- verdict a i is the code of app a at stage i, live or not (Q-S5-9 (a)).
+verdict : ℕ → ℕ → ℕ
+verdict a i = verdictCode 3 1 (flagIf (natEq i 0) (compat 3 1 bare_0 bare_0 chain0 (lives i) cols (appAt a)) (flagIf (natEq i 1) (compat 3 1 bare_0 bare_1 chain1 (lives i) cols (appAt a)) (compat 3 1 bare_0 bare_2 bare (lives i) cols (appAt a))))
+
+-- guard i x is the first failed fact of stage i for the mask x.
+guard : ℕ → ℕ → ℕ
+guard i x = guardFirst 3 1 (flagIf (natEq i 0) (stageGuard 3 1 bare_0 bare_0 chain0 (lives i) apps liveAt cols) (flagIf (natEq i 1) (stageGuard 3 1 bare_0 bare_1 chain1 (lives i) apps liveAt cols) (stageGuard 3 1 bare_0 bare_2 bare (lives i) apps liveAt cols))) x

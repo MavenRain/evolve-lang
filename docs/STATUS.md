@@ -1146,3 +1146,118 @@ and did not record the rejected stage. This does not replace a native
 PostgreSQL server run or concurrent-client validation (`PLAN` O19).
 
 No CI weakening and no unresolved findings from this review.
+
+## S7: the Wasm oracle writer (`langc wasm`)
+
+S7 adds the Wasm oracle. `langc wasm PROG PROTOCOL -o OUT` checks the
+program and writes a Wasm 1.0 (MVP) module that holds the compatibility
+table of the protocol (PLAN 5.3): the exports `stages`, `apps`, `verdict`
+and `guard`. An agent or a CI job with no C toolchain can read the
+verdicts from it. The module is not the type checker (Q3). A differential
+compares each module call with the guest folds `verdictCode` and
+`guardFirst` under `langc eval`. SPEC.md 6.4 gives the command and SPEC.md
+7.1 the encoding.
+
+### Source
+- No port. `src/oracle.c` (213 lines), `src/oracle.h`, `src/wasmbin.c`
+  (58 lines) and `src/wasmbin.h` (46 lines) are new. S7 changes 13 files
+  and adds 18 files: the 4 source files, `test/oracle-writer.c`,
+  `test/eval/oracle.lang`, 6 files `test/oracle/NAME.lang` and 6 files
+  `test/wasm/NAME.wasm`. It removes no file.
+
+### Units
+- U0, the byte writer and the runner (Q-S7-1 (a), Q-S7-2 (a)): the Wasm
+  byte helpers (the LEB128 numbers, the names and the sized sections) move
+  from `src/wasm.c` to `src/wasmbin.c`, so `src/wasm.c` and
+  `src/oracle.c` use the same helpers. The 16 modules of `langc build` are
+  byte equal before and after. `test/run-wasm.mjs` calls an entry with
+  BigInt arguments, and again with Number arguments on a TypeError (an i32
+  parameter). It prints an i32 result as an unsigned 32-bit decimal.
+- U1, the guest side: `domain/domain.lang` adds the folds `verdictCode`
+  (the cell byte of a `Verdict`, Q-S7-3 (a)), `halfOdd`, `guardWalk` and
+  `guardFirst` (the first failed fact for a mask, Q-S7-4 (a)).
+  `test/eval/oracle.lang` checks them: 36 new evals.
+- U2, the writer and the command: `src/oracle.c`, `src/oracle.h`, the
+  command `wasm` in `src/main.c` and the code `WASM_LIMIT` (no fixture).
+  The module has one data segment at offset 0: the cells in the Report
+  order, then the fact count of each stage (Q-S7-5 (a)). The USER ruled
+  (2026-10-30) that `test/oracle-writer.c` checks `WASM_LIMIT` on a
+  hand-made Report, because a checked program does not get to the bound:
+  with the 1 GiB arena, `langc check` gives `OOM` at 18 backfilled
+  columns (a stage of 19 facts) and at 12 retired apps; 17 columns (18
+  facts) is the largest program found.
+- U3, the goldens and the differential (Q-S7-6 (a), Q-S7-7 (a)): 6 golden
+  modules `test/wasm/NAME.wasm` (189 to 214 bytes), one for each golden
+  report, and 6 programs `test/oracle/NAME.lang` with the guest entries
+  `verdict` and `guard`. The goldens have the cell codes 0 (50 cells), 2
+  (13), 3 (1), 4 (3), 5 (4) and 9 (4). The codes 1, 6, 7 and 8 refuse the
+  full protocol, so no golden has them. The USER ruled (2026-10-30) that
+  `test/oracle-writer.c` checks the cell byte of each code 0 to 9 on a
+  hand-made Report. Negative controls on the gate part (a wrong module
+  for the calls, a changed program) are KILLED.
+- U4, the mutants and the docs: the mutants M1 to M8 below. M7 lived on
+  the module calls, so the gate adds 3 calls for each golden that must
+  trap: `verdict APPS 0`, `verdict 0 STAGES` and `guard STAGES 0`
+  (157 to 175 calls). SPEC.md 6.4 and 7.1; PLAN 5.3 and the S7 row;
+  `docs/host/CAPABILITY.md` (the `src/wasm.c` lines of `ADD_CARRY` and
+  `MUL_CARRY` after U0); the `README.md` status; this section.
+
+### Gate counts against S6
+
+| Count | S6 (68ee873) | S7 |
+|---|---|---|
+| examples | 12 | 12 |
+| parse refusals | 11 | 11 |
+| check refusals | 80 | 80 |
+| evals | 218 | 254 |
+| ir lowered | 12 | 12 |
+| wasm modules | 16 | 16 |
+| differential cases (0 mismatches) | 892 | 892 |
+| oracle golden modules, calls (0 mismatches) | none | 6, 175 |
+| oracle differential cases (0 mismatches) | none | 143 |
+| fmt canonical, non-canonical pairs | 166, 8 | 173, 8 |
+| json fixtures | 38 | 38 |
+| diagnostics codes (fixture, no fixture) | 52 (36, 16) | 53 (36, 17) |
+| golden reports | 6 | 6 |
+| golden SQL protocols, files | 10, 60 | 10, 60 |
+| cubical checks, round trips | 52, 29 | 52, 29 |
+| json writer regressions | 21 | 21 |
+| report guard regressions | 4 | 4 |
+| sql writer regressions | 4 | 4 |
+| sql protocol regressions | 13 | 13 |
+
+The gate has 0 failures, and `build/oracle-writer` has no FAIL line. The
+review, domain and diagnostic edit regressions pass. The 7 new fmt
+programs are `test/eval/oracle.lang` and the 6 files `test/oracle/NAME.lang`.
+
+### Op values
+51 Op values. S7 adds no Op. `src/front/eval.c` and the kernel do not
+change.
+
+### Mutants
+Each mutant makes one change in `src/oracle.c`, then `make -B`,
+`build/oracle-writer` and the oracle part of `test/gate.sh`. These 8
+mutants are all KILLED. Each mutant also changes the module bytes, so the
+`cmp` with `test/wasm/NAME.wasm` gives 12 FAIL lines (6 goldens, 6
+differential modules). The table gives the killer on the module calls.
+
+| Mutant | Site | Result |
+|---|---|---|
+| M1 | `cell_byte`: a refused code is K + 2 | KILLED by `build/oracle-writer` (the code map) and 21 call mismatches |
+| M2 | `cell_byte`: a runtime cell is 0 | KILLED by `build/oracle-writer` (the code map) and 4 call mismatches |
+| M3 | the table: the cells in stage order | KILLED by 36 call mismatches |
+| M4 | `body_guard`: the result is K, not K + 1 | KILLED by 21 call mismatches |
+| M5 | `body_guard`: it tests bit N - 1 - K | KILLED by 4 call mismatches |
+| M6 | `body_guard`: the loop stops at K + 1 >= N | KILLED by 17 call mismatches |
+| M7 | `body_verdict`: an app out of range gives 0, not a trap | KILLED by 7 call mismatches (after the 3 trap calls; before, only by the `cmp`) |
+| M8 | `body_stages`: the result is S - 1 | KILLED by 6 call mismatches |
+
+### Open items from S7
+- Q-S7-1 to Q-S7-8 are RULED (a) (USER 2026-10-30). Q-S2b-1 to Q-S2b-8
+  stay open (PLAN section 11).
+- No checked program gets to `WASM_LIMIT`, and no golden module has a
+  cell with the codes 1, 6, 7 or 8. `test/oracle-writer.c` checks these
+  on hand-made Reports only.
+- The differential tests the masks below 2^min(k, 6) of a stage with k
+  facts, because the guest fold on a natural number is linear in its
+  value.

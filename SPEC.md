@@ -632,17 +632,138 @@ and each file must be equal to its golden file byte for byte. The staged
 review executed the files in PostgreSQL WASM (`docs/STATUS.md`, S6 review).
 A native server run remains open (Q-S6-14 (a), `docs/PLAN.md` O19).
 
-## 7. Target and instance encoding
+### 6.4 The Wasm oracle (`langc wasm`)
 
-> Write here: what the compiler writes. For a JSON target, give the instance
-> rule and the encoding table. For a contract target, give the storage, the
-> entries and the guards. Say how each proof erases.
+`langc wasm PROG PROTOCOL -o OUT` checks the program PROG and writes the
+Wasm 1.0 (MVP) module of the protocol PROTOCOL in the file OUT
+(`docs/PLAN.md` 5.3). The module holds the compatibility table of the
+protocol: the verdict of each matrix row of 6.2 and the guard fact count of
+each stage. Section 7 gives the encoding. The writer reads the result of
+the check. It does not decide a verdict, and the module is not the type
+checker (Q3). The command writes nothing on stdout.
+
+The error paths are those of `sql` (6.3):
+
+- PROG does not pass `langc check`: `wasm` writes the `check` diagnostics
+  as text on stderr and the exit is 1. The exit is 2 when PROG cannot be
+  read.
+- PROG has no protocol PROTOCOL, or the arguments are not `PROG PROTOCOL
+  -o OUT`: `USAGE`, and the exit is 2.
+- A stage of the protocol has more than 32 guard facts: `WASM_LIMIT`, and
+  the exit is 2. The guard mask is one i32 (section 7).
+- PROG is not in canonical form: `wasm` writes the `W_NONCANON` line as
+  text on stderr. The module does not change and the exit is 0.
+
+The writer makes the table on the arena before it opens OUT. Thus after
+`WASM_LIMIT`, `OOM` or `INTERNAL` it does not write OUT.
+
+The exit codes:
+
+- 0: the writer wrote the module.
+- 1: PROG does not pass `langc check`.
+- 2: `USAGE`, `IO` (for example, the writer cannot write OUT),
+  `WASM_LIMIT`, `OOM` or `INTERNAL`.
+
+`WASM_LIMIT` is a bound that a checked program does not get to. With the
+1 GiB arena, `langc check` gives `OOM` at 18 backfilled columns (a stage
+of 19 facts) and at 12 retired apps. 17 backfilled columns (a stage of 18
+facts) is the largest program found (`docs/STATUS.md`, S7).
+
+Tests:
+
+- `test/gate.sh` runs `wasm` on the program of each golden report
+  `test/report/NAME.json` (the program is found as in 6.2), with NAME as
+  the protocol (Q-S7-7 (a)). The module must be equal to
+  `test/wasm/NAME.wasm` byte for byte, and `wasm-validate` must accept it.
+  Then `test/run-wasm.mjs` calls the module: `stages`, `apps`, `verdict A
+  I` for each matrix row, and for each stage I, `guard I 0` (1 when the
+  stage has a fact, else 0) and `guard I 4294967295` (0). Each result must
+  agree with NAME.json. The calls `verdict APPS 0`, `verdict 0 STAGES` and
+  `guard STAGES 0` must trap. The gate prints `oracle: 6 golden modules,
+  175 calls, 0 mismatches`.
+- The differential (Q-S7-6 (a)): `test/oracle/NAME.lang` is the program
+  NAME with the guest entries `verdict` and `guard` (section 7). `langc
+  wasm` on it gives `test/wasm/NAME.wasm` too. For each matrix cell and
+  for each mask below 2^min(k, 6) of a stage with k facts, `langc eval`
+  of the same call must give the result of the module. The gate prints
+  `oracle differential: 143 cases, 0 mismatches`.
+- `build/oracle-writer` (`test/oracle-writer.c`) checks `WASM_LIMIT` (33
+  facts) and the largest mask (32 facts) on a hand-made Report. It also
+  checks the cell byte of each code 0 to 9 on a hand-made Report. The codes
+  1, 6, 7 and 8 refuse the full protocol, so no checked program has a cell
+  with them, and no golden module can have them (USER ruling 2026-10-30).
+
+## 7. Target and instance encoding
 
 An instance is a top-level definition whose type is a data type (F14).
 
-| Type | Encoding |
+### 7.1 The Wasm oracle module
+
+`langc wasm` (6.4) writes a Wasm 1.0 (MVP) module with no imports
+(`src/oracle.h`, `src/oracle.c`; the byte helpers are in `src/wasmbin.c`).
+The module holds no term and no proof of the program: only the cell bytes
+and the fact counts. The sections, in this order:
+
+- type: two types, `() -> i32` and `(i32, i32) -> i32`.
+- function: the 4 functions of the exports.
+- memory: one memory with no maximum. Its pages are the table length
+  divided by 65536, rounded up. The module does not export the memory.
+- export: the 4 functions, in the order below (Q-S7-2 (a)).
+- code: the 4 bodies.
+- data: one active segment of memory 0 at offset 0, the table.
+
+The table (Q-S7-5 (a)): A is the app count and S the stage count of the
+protocol. The bytes 0 to A * S - 1 are the cells, in the Report order: the
+cell of app a at stage i is the byte a * S + i. Then the byte A * S + i
+is the guard fact count of stage i. The table length is A * S + S, and it
+is 1 or more (each protocol has stage 0).
+
+The cell byte (Q-S7-3 (a)):
+
+| Byte | Verdict |
 |---|---|
-| | |
+| 0 | `compatible` |
+| 1 | `refused`, `REFUSE_DROP_REQUIRED` (`dropRequired`) |
+| 2 | `refused`, `REFUSE_MISSING_COLUMN` (`missingColumn`) |
+| 3 | `refused`, `REFUSE_STALE_READ` (`staleRead`) |
+| 4 | `refused`, `REFUSE_UNFILLED_READ` (`unfilledRead`) |
+| 5 | `refused`, `REFUSE_NULL_INSERT` (`nullInsert`) |
+| 6 | `refused`, `REFUSE_STEP_INDEX` (`stepIndex`) |
+| 7 | `refused`, `REFUSE_LOCK_SCAN` (`lockScan`) |
+| 8 | `refused`, `REFUSE_RENAME_INPLACE` (`renameInplace`) |
+| 9 | `runtime` |
+
+The bytes 1 to 8 are the `Code` constructors in the domain order. A cell
+that is not live keeps the code of its matrix row (Q-S5-9 (a)).
+
+The exports. Each argument and each result is an i32:
+
+- `stages()`: S.
+- `apps()`: A.
+- `verdict(app, stage)`: the cell byte of the app at the stage.
+- `guard(stage, facts)`: the first failed fact (Q-S7-4 (a)). Bit K of
+  FACTS (bit 0 first) is 1 when fact K of the stage guards holds. N is the
+  fact count of the stage. The result is K + 1 for the lowest K below N
+  with bit K 0, else 0. The bits at K >= N have no effect. Thus `guard(I,
+  0)` is 1 when stage I has a fact, else 0.
+- An app or a stage out of range traps (`unreachable`).
+
+The mask has 32 bits, so a stage has a maximum of 32 facts
+(`ORACLE_FACTS_MAX`). A stage with more facts gives `WASM_LIMIT` (6.4).
+
+The guest side (S7 U1). Two folds of `domain/domain.lang` give the same
+values as guest terms:
+
+- `verdictCode n m v` is the cell byte of the verdict `v : Verdict n m`:
+  0 for compatible, the `Code` in the domain order (1 to 8) for refused,
+  and 9 for runtime.
+- `guardFirst n m g x` is the result of `guard` for the guard `g : Guard
+  n m Unit` and the mask x. It walks the facts of g in the need order
+  (`guardWalk`).
+
+The differential of 6.4 runs these folds with `langc eval` on
+`test/oracle/NAME.lang` and compares each result with the same call of
+the module `test/wasm/NAME.wasm`.
 
 ## 8. Host and target
 

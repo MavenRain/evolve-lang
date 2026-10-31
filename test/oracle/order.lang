@@ -1,0 +1,63 @@
+-- The oracle differential of the golden module order (S7 U3, Q-S7-6 (a)):
+-- the program of test/report/order.lang, then the chain of each stage before
+-- the last, one step a stage (Q-S3-27 (a)), and the entries verdict and
+-- guard. The gate runs each entry with `langc eval` and compares the result
+-- with the same call of test/wasm/order.wasm.
+table users (id : bigint key, name : text, nick : text)
+
+app v0 (reads users.id, reads users.nick)
+
+app v1 (reads users.id, reads users.name)
+
+app v2 (reads users.id, reads users.full)
+
+protocol order where
+  retire v0
+  dropColumn users nick
+  addColumn users full text
+  backfill users full ← name batch 500
+  deploy v2
+  retire v1
+
+-- The program columns in the code order, the apps, liveAt and the live set
+-- of each stage (Q-S4-2 (a)).
+cols : Cols 4
+cols = pack 4 (λ (j : ℕ) → flagIf (natEq j 0) users_id (flagIf (natEq j 1) users_name (flagIf (natEq j 2) users_nick users_full)))
+
+appAt : ℕ → App 4
+appAt a = flagIf (natEq a 0) v0 (flagIf (natEq a 1) v1 v2)
+
+apps : Live 4
+apps = pack 3 (λ (j : ℕ) → appAt j)
+
+liveAt : ℕ → ℕ → Bool
+liveAt i j = flagIf (natEq j 0) (natEq i 0) (flagIf (natEq j 1) (natLe i 5) (natLe 5 i))
+
+lives : ℕ → Live 4
+lives i = flagIf (natEq i 0) (pack 2 (λ (j : ℕ) → appAt j)) (flagIf (natLe i 4) (pack 1 (λ (j : ℕ) → v1)) (flagIf (natEq i 5) (pack 2 (λ (j : ℕ) → appAt (natAdd j 1))) (pack 1 (λ (j : ℕ) → v2))))
+
+chain0 : Chain 4 1 order_0 order_0
+chain0 = nil 4 1 order_0
+
+chain1 : Chain 4 1 order_0 order_1
+chain1 = snoc 4 1 order_0 order_0 order_1 chain0 (retire 4 1 order_0 v0)
+
+chain2 : Chain 4 1 order_0 order_2
+chain2 = snoc 4 1 order_0 order_1 order_2 chain1 (dropColumn 4 1 order_1 users users_nick refl)
+
+chain3 : Chain 4 1 order_0 order_3
+chain3 = snoc 4 1 order_0 order_2 order_3 chain2 (addColumn 4 1 order_2 users users_full text refl)
+
+chain4 : Chain 4 1 order_0 order_4
+chain4 = snoc 4 1 order_0 order_3 order_4 chain3 (backfill 4 1 order_3 users users_full users_name 500 refl)
+
+chain5 : Chain 4 1 order_0 order_5
+chain5 = snoc 4 1 order_0 order_4 order_5 chain4 (deploy 4 1 order_4 v2)
+
+-- verdict a i is the code of app a at stage i, live or not (Q-S5-9 (a)).
+verdict : ℕ → ℕ → ℕ
+verdict a i = verdictCode 4 1 (flagIf (natEq i 0) (compat 4 1 order_0 order_0 chain0 (lives i) cols (appAt a)) (flagIf (natEq i 1) (compat 4 1 order_0 order_1 chain1 (lives i) cols (appAt a)) (flagIf (natEq i 2) (compat 4 1 order_0 order_2 chain2 (lives i) cols (appAt a)) (flagIf (natEq i 3) (compat 4 1 order_0 order_3 chain3 (lives i) cols (appAt a)) (flagIf (natEq i 4) (compat 4 1 order_0 order_4 chain4 (lives i) cols (appAt a)) (flagIf (natEq i 5) (compat 4 1 order_0 order_5 chain5 (lives i) cols (appAt a)) (compat 4 1 order_0 order_6 order (lives i) cols (appAt a))))))))
+
+-- guard i x is the first failed fact of stage i for the mask x.
+guard : ℕ → ℕ → ℕ
+guard i x = guardFirst 4 1 (flagIf (natEq i 0) (stageGuard 4 1 order_0 order_0 chain0 (lives i) apps liveAt cols) (flagIf (natEq i 1) (stageGuard 4 1 order_0 order_1 chain1 (lives i) apps liveAt cols) (flagIf (natEq i 2) (stageGuard 4 1 order_0 order_2 chain2 (lives i) apps liveAt cols) (flagIf (natEq i 3) (stageGuard 4 1 order_0 order_3 chain3 (lives i) apps liveAt cols) (flagIf (natEq i 4) (stageGuard 4 1 order_0 order_4 chain4 (lives i) apps liveAt cols) (flagIf (natEq i 5) (stageGuard 4 1 order_0 order_5 chain5 (lives i) apps liveAt cols) (stageGuard 4 1 order_0 order_6 order (lives i) apps liveAt cols))))))) x

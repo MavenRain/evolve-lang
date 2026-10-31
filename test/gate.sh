@@ -188,6 +188,102 @@ echo "differential: $cases cases, $mismatches mismatches"
 # A Bool argument larger than 1 traps (langc eval refuses it with EVAL_ARGS).
 got=$(node test/run-wasm.mjs "$tmp/entries.wasm" pick 2 4 9 2>&1) || true
 [ "$got" = "trap" ] || { echo "FAIL wasm pick 2 4 9: want trap, got $got"; fail=$((fail + 1)); }
+# WASM_LIMIT (Q-S7-4 (a)): a checked program does not get to a stage with 33
+# guard facts (the check reaches the arena limit first), and a checked program
+# has no cell with the codes 1, 6, 7 or 8 (each refuses the full protocol). So
+# build/oracle-writer checks the bound and the cell byte of each code 0 to 9 on
+# hand-made reports. It prints only FAIL lines.
+build/oracle-writer 2>"$tmp/oracle.err" || { echo "FAIL oracle writer: $(head -n 1 "$tmp/oracle.err")"; fail=$((fail + 1)); }
+# The oracle modules (Q-S7-7 (a)). For each golden report NAME (the program is
+# found as for the golden reports below), `langc wasm` gives
+# test/wasm/NAME.wasm byte for byte, and the module is valid. Its calls agree
+# with test/report/NAME.json: `stages`, `apps`, `verdict A I` for each matrix
+# cell in the Report order (0 compatible, 1 to 8 the refused code in the
+# domain order, 9 runtime), and for each stage I, `guard I 0` (1 when the
+# stage has a fact, else 0) and `guard I 4294967295` (0). The calls with an
+# index out of range, `verdict APPS 0`, `verdict 0 STAGES` and
+# `guard STAGES 0`, trap.
+# The oracle differential (Q-S7-6 (a)). test/oracle/NAME.lang is the program
+# NAME with the chain of each stage and the guest entries verdict and guard.
+# Its module is test/wasm/NAME.wasm too. For each (app, stage) cell and for
+# each mask below 2^min(k, 6) of a stage with k facts, `langc eval` on it
+# gives the result of the same call of the module.
+oracles=0
+ocalls=0
+omis=0
+dcases=0
+dmis=0
+for want in $(printf '%s\n' test/report/*.json | LC_ALL=C sort); do
+  name=$(basename "$want" .json)
+  prog="test/report/$name.lang"
+  [ -f "$prog" ] || prog="examples/$name.lang"
+  oracles=$((oracles + 1))
+  if ! build/langc wasm "$prog" "$name" -o "$tmp/o.wasm" 2>"$tmp/o.err" || ! wasm-validate "$tmp/o.wasm" 2>>"$tmp/o.err"; then
+    echo "FAIL oracle $name: $(head -n 1 "$tmp/o.err" | cut -c1-120)"
+    fail=$((fail + 1))
+    continue
+  fi
+  cmp -s "test/wasm/$name.wasm" "$tmp/o.wasm" || { echo "FAIL oracle $name: the module is not test/wasm/$name.wasm"; fail=$((fail + 1)); }
+  rg -o '"guards":\[[^]]*\]' "$want" | awk '{ print gsub(/"fact":/, "") }' >"$tmp/o.facts"
+  rg -o '"verdict":"[a-z]+"(,"code":"[A-Z_]+")?' "$want" >"$tmp/o.cells" || true
+  awk 'BEGIN {
+      split("DROP_REQUIRED MISSING_COLUMN STALE_READ UNFILLED_READ NULL_INSERT STEP_INDEX LOCK_SCAN RENAME_INPLACE", r, " ")
+      for (k = 1; k <= 8; k++) code["REFUSE_" r[k]] = k
+    }
+    FNR == NR { facts[s++] = $1; next }
+    { cell[n++] = $0 }
+    END {
+      print "stages|" s
+      print "apps|" (s > 0 ? n / s : 0)
+      for (j = 0; j < n; j++) {
+        w = "unknown"
+        if (cell[j] ~ /"compatible"/) w = 0
+        else if (cell[j] ~ /"runtime"/) w = 9
+        else if (match(cell[j], /REFUSE_[A-Z_]+/) && (substr(cell[j], RSTART, RLENGTH) in code)) w = code[substr(cell[j], RSTART, RLENGTH)]
+        print "verdict " int(j / s) " " (j % s) "|" w
+      }
+      for (i = 0; i < s; i++) print "guard " i " 0|" (facts[i] > 0 ? 1 : 0) "\nguard " i " 4294967295|0"
+      print "verdict " (s > 0 ? n / s : 0) " 0|trap\nverdict 0 " s "|trap\nguard " s " 0|trap"
+    }' "$tmp/o.facts" "$tmp/o.cells" >"$tmp/o.want"
+  cut -d '|' -f 1 "$tmp/o.want" >"$tmp/o.calls"
+  if ! node test/run-wasm.mjs "$tmp/o.wasm" - <"$tmp/o.calls" >"$tmp/o.got" 2>"$tmp/o.err"; then
+    echo "FAIL node oracle $name: $(head -n 1 "$tmp/o.err")"
+    fail=$((fail + 1))
+    continue
+  fi
+  ocalls=$((ocalls + $(rg -c '.' "$tmp/o.calls" || echo 0)))
+  paste -d '|' "$tmp/o.want" "$tmp/o.got" | awk -F '|' '$2 != $3' >"$tmp/bad.txt"
+  bad=$(rg -c '.' "$tmp/bad.txt" || echo 0)
+  omis=$((omis + bad))
+  [ "$bad" -eq 0 ] || { echo "FAIL oracle $name: $bad mismatches, first $(head -n 1 "$tmp/bad.txt")"; fail=$((fail + 1)); }
+  orac="test/oracle/$name.lang"
+  if ! build/langc wasm "$orac" "$name" -o "$tmp/d.wasm" 2>"$tmp/o.err" || ! cmp -s "test/wasm/$name.wasm" "$tmp/d.wasm"; then
+    echo "FAIL oracle differential $name: the module of $orac is not test/wasm/$name.wasm $(head -n 1 "$tmp/o.err")"
+    fail=$((fail + 1))
+    continue
+  fi
+  { awk -F '|' '/^verdict / && $2 != "trap" { print $1 }' "$tmp/o.want"
+    awk '{ m = $1 < 6 ? $1 : 6; for (x = 0; x < 2 ^ m; x++) print "guard " (NR - 1) " " x }' "$tmp/o.facts"; } >"$tmp/d.cases"
+  : >"$tmp/d.want"
+  while read -r call; do
+    status=0
+    w=$(build/langc eval "$orac" $call 2>/dev/null) || status=$?
+    [ "$status" -eq 0 ] || w="eval-exit-$status"
+    echo "$w" >>"$tmp/d.want"
+  done <"$tmp/d.cases"
+  if ! node test/run-wasm.mjs "test/wasm/$name.wasm" - <"$tmp/d.cases" >"$tmp/d.got" 2>"$tmp/o.err"; then
+    echo "FAIL node oracle differential $name: $(head -n 1 "$tmp/o.err")"
+    fail=$((fail + 1))
+    continue
+  fi
+  dcases=$((dcases + $(rg -c '.' "$tmp/d.cases" || echo 0)))
+  paste -d '|' "$tmp/d.cases" "$tmp/d.want" "$tmp/d.got" | awk -F '|' '$2 != $3' >"$tmp/bad.txt"
+  bad=$(rg -c '.' "$tmp/bad.txt" || echo 0)
+  dmis=$((dmis + bad))
+  [ "$bad" -eq 0 ] || { echo "FAIL oracle differential $name: $bad mismatches, first $(head -n 1 "$tmp/bad.txt")"; fail=$((fail + 1)); }
+done
+echo "oracle: $oracles golden modules, $ocalls calls, $omis mismatches"
+echo "oracle differential: $dcases cases, $dmis mismatches"
 # The canonical printer. Each committed .lang file that parses is canonical:
 # `langc fmt F` equals F byte for byte, so fmt is idempotent on it. The
 # fronttool AST dump of F equals the dump of `fmt F` (the round trip). Each
@@ -199,7 +295,7 @@ same_dump() {
     cmp -s "$tmp/d1.txt" "$tmp/d2.txt"
 }
 canon=0
-for f in domain/domain.lang examples/*.lang test/check/*.lang test/eval/*.lang test/ir/*.lang test/json/*.lang test/report/*.lang test/sql/*.lang test/fmt/*.canon; do
+for f in domain/domain.lang examples/*.lang test/check/*.lang test/eval/*.lang test/ir/*.lang test/json/*.lang test/oracle/*.lang test/report/*.lang test/sql/*.lang test/fmt/*.canon; do
   case "$f" in
     test/json/LEX_*.lang | test/json/PARSE_*.lang | test/json/W_NONCANON.lang) continue ;;
   esac
@@ -265,7 +361,7 @@ done
 # docs/DIAGNOSTICS.md has one row for each code in src/. Each code has
 # test/json/CODE.lang (its first JSON line has that code), or its row gives
 # "no fixture:" and a reason; not the two.
-rg -o -I -N -r '$1$2$3' '"((?:LEX|PARSE|REFUSE|TYPE|NAME|EVAL|DOMAIN|GLUE|UNGLUE|SQL|W)_[A-Z_]+)"|"(OOM|IO|IO_SIZE|USAGE|INTERNAL)"|langc: ((?:EVAL|REFUSE|TYPE)_[A-Z_]+):' src |
+rg -o -I -N -r '$1$2$3' '"((?:LEX|PARSE|REFUSE|TYPE|NAME|EVAL|DOMAIN|GLUE|UNGLUE|SQL|WASM|W)_[A-Z_]+)"|"(OOM|IO|IO_SIZE|USAGE|INTERNAL)"|langc: ((?:EVAL|REFUSE|TYPE)_[A-Z_]+):' src |
   LC_ALL=C sort -u >"$tmp/src-codes.txt"
 rg -o -N -r '$1' '^\| `([A-Z_]+)` \|' docs/DIAGNOSTICS.md | LC_ALL=C sort -u >"$tmp/doc-codes.txt"
 if ! cmp -s "$tmp/src-codes.txt" "$tmp/doc-codes.txt"; then

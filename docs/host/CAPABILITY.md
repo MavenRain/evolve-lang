@@ -35,9 +35,9 @@ on 2026-10-08 on AArch64 Darwin.
 
 ## Overflow tests on Wasm
 
-- `ADD_CARRY` is `a + b < a`, modulo 2^64 (`src/wasm.c:178`).
+- `ADD_CARRY` is `a + b < a`, modulo 2^64 (`src/wasm.c:115`).
 - `MUL_CARRY` is `b > (2^64 - 1) / max(a, 1)` with `i64.div_u`
-  (`src/wasm.c:181`). The Wasm MVP has no 128-bit product. The test is
+  (`src/wasm.c:119`). The Wasm MVP has no 128-bit product. The test is
   exact: for a > 0, a * b <= 2^64 - 1 if and only if
   b <= floor((2^64 - 1) / a). For a = 0 the product is 0, and the test
   gives 0 for each b.

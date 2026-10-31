@@ -1,0 +1,96 @@
+-- The oracle differential of the golden module rename (S7 U3, Q-S7-6 (a)):
+-- the program of examples/rename.lang, then the chain of each stage before
+-- the last, one step a stage (Q-S3-27 (a)), and the entries verdict and
+-- guard. The gate runs each entry with `langc eval` and compares the result
+-- with the same call of test/wasm/rename.wasm.
+-- The rename demo of PLAN 4.6 (D5): users.name becomes users.display_name.
+-- v1 reads and writes name. v3 reads and writes display_name. An app that
+-- inserts into users also inserts the key users.id (J2.4).
+-- D5 stage 0: the start, users (id, name). v1 is live. Checker stage 0.
+-- D5 stage 1: addColumn. Checker stage 1.
+-- D5 stage 2: installSync. Checker stage 2.
+-- D5 stage 3: backfill. Checker stage 3.
+-- D5 stage 4: deploy v3 (barrier). v1 and v3 are live. Checker stage 4.
+-- D5 stage 5: retire v1 (barrier), dropSync, dropColumn. v3 is live.
+-- Checker stages 5, 6 and 7.
+table users (id : bigint key, name : text)
+
+app v1 (reads users.name, reads users.id, writes users.name, inserts users.id, inserts users.name)
+
+app v3 (reads users.display_name, reads users.id, writes users.display_name, inserts users.id, inserts users.display_name)
+
+protocol rename where
+  addColumn users display_name text
+  installSync users display_name name
+  backfill users display_name ← name batch 1000
+  deploy v3
+  retire v1
+  dropSync users display_name name
+  dropColumn users name
+
+-- The laws L1, L4 and L6 on `rename` (Q-S4-7 (a)), proved by `refl`. The
+-- live sets are the live sets of the C driver: v1 at stages 0 to 3, v1 and
+-- v3 at stage 4, v3 at stages 5 to 7. `cols` is all the program columns.
+lives : ℕ → Live 3
+lives i = flagIf (natLe i 3) (pack 1 (λ (j : ℕ) → v1)) (flagIf (natEq i 4) (pack 2 (λ (j : ℕ) → flagIf (natEq j 0) v1 v3)) (pack 1 (λ (j : ℕ) → v3)))
+
+cols : Cols 3
+cols = pack 3 (λ (j : ℕ) → flagIf (natEq j 0) users_id (flagIf (natEq j 1) users_name users_display_name))
+
+stageSound : Bool
+stageSound = accepts 3 1 rename_0 rename_7 rename lives cols
+
+stageSoundProof : Path Bool stageSound true
+stageSoundProof = refl
+
+dropSound : Bool
+dropSound = dropSafe 3 1 rename_0 rename_7 rename lives
+
+dropSoundProof : Path Bool dropSound true
+dropSoundProof = refl
+
+lockSound : Bool
+lockSound = lockSafe 3 1 rename_0 rename_7 rename
+
+lockSoundProof : Path Bool lockSound true
+lockSoundProof = refl
+
+-- The apps and liveAt (Q-S4-2 (a)). cols and lives are the definitions of
+-- examples/rename.lang above.
+appAt : ℕ → App 3
+appAt a = flagIf (natEq a 0) v1 v3
+
+apps : Live 3
+apps = pack 2 (λ (j : ℕ) → appAt j)
+
+liveAt : ℕ → ℕ → Bool
+liveAt i j = flagIf (natEq j 0) (natLe i 4) (natLe 4 i)
+
+chain0 : Chain 3 1 rename_0 rename_0
+chain0 = nil 3 1 rename_0
+
+chain1 : Chain 3 1 rename_0 rename_1
+chain1 = snoc 3 1 rename_0 rename_0 rename_1 chain0 (addColumn 3 1 rename_0 users users_display_name text refl)
+
+chain2 : Chain 3 1 rename_0 rename_2
+chain2 = snoc 3 1 rename_0 rename_1 rename_2 chain1 (installSync 3 1 rename_1 users users_display_name users_name refl)
+
+chain3 : Chain 3 1 rename_0 rename_3
+chain3 = snoc 3 1 rename_0 rename_2 rename_3 chain2 (backfill 3 1 rename_2 users users_display_name users_name 1000 refl)
+
+chain4 : Chain 3 1 rename_0 rename_4
+chain4 = snoc 3 1 rename_0 rename_3 rename_4 chain3 (deploy 3 1 rename_3 v3)
+
+chain5 : Chain 3 1 rename_0 rename_5
+chain5 = snoc 3 1 rename_0 rename_4 rename_5 chain4 (retire 3 1 rename_4 v1)
+
+chain6 : Chain 3 1 rename_0 rename_6
+chain6 = snoc 3 1 rename_0 rename_5 rename_6 chain5 (dropSync 3 1 rename_5 users users_display_name users_name refl)
+
+-- verdict a i is the code of app a at stage i, live or not (Q-S5-9 (a)).
+verdict : ℕ → ℕ → ℕ
+verdict a i = verdictCode 3 1 (flagIf (natEq i 0) (compat 3 1 rename_0 rename_0 chain0 (lives i) cols (appAt a)) (flagIf (natEq i 1) (compat 3 1 rename_0 rename_1 chain1 (lives i) cols (appAt a)) (flagIf (natEq i 2) (compat 3 1 rename_0 rename_2 chain2 (lives i) cols (appAt a)) (flagIf (natEq i 3) (compat 3 1 rename_0 rename_3 chain3 (lives i) cols (appAt a)) (flagIf (natEq i 4) (compat 3 1 rename_0 rename_4 chain4 (lives i) cols (appAt a)) (flagIf (natEq i 5) (compat 3 1 rename_0 rename_5 chain5 (lives i) cols (appAt a)) (flagIf (natEq i 6) (compat 3 1 rename_0 rename_6 chain6 (lives i) cols (appAt a)) (compat 3 1 rename_0 rename_7 rename (lives i) cols (appAt a)))))))))
+
+-- guard i x is the first failed fact of stage i for the mask x.
+guard : ℕ → ℕ → ℕ
+guard i x = guardFirst 3 1 (flagIf (natEq i 0) (stageGuard 3 1 rename_0 rename_0 chain0 (lives i) apps liveAt cols) (flagIf (natEq i 1) (stageGuard 3 1 rename_0 rename_1 chain1 (lives i) apps liveAt cols) (flagIf (natEq i 2) (stageGuard 3 1 rename_0 rename_2 chain2 (lives i) apps liveAt cols) (flagIf (natEq i 3) (stageGuard 3 1 rename_0 rename_3 chain3 (lives i) apps liveAt cols) (flagIf (natEq i 4) (stageGuard 3 1 rename_0 rename_4 chain4 (lives i) apps liveAt cols) (flagIf (natEq i 5) (stageGuard 3 1 rename_0 rename_5 chain5 (lives i) apps liveAt cols) (flagIf (natEq i 6) (stageGuard 3 1 rename_0 rename_6 chain6 (lives i) apps liveAt cols) (stageGuard 3 1 rename_0 rename_7 rename (lives i) apps liveAt cols)))))))) x

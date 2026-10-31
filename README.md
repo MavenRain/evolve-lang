@@ -32,7 +32,9 @@ the JSON compatibility report `langc report FILE PROTOCOL` (`SPEC.md` 6.2).
 S6 adds the step `createIndexConcurrently`, the laws L2 and L3, and the
 SQL writer `langc sql PROG PROTOCOL OUTDIR` (`SPEC.md` 6.3): one
 PostgreSQL file for each stage, with `lock_timeout`, the guards and the
-progress ledger. `make check` passes.
+progress ledger. S7 adds the Wasm oracle `langc wasm PROG PROTOCOL -o OUT`
+(`SPEC.md` 6.4): a Wasm module with the compatibility table of one
+protocol, for an agent or a CI job with no C toolchain. `make check` passes.
 `docs/PLAN.md` section 9 gives the slices, and `docs/STATUS.md` gives the state.
 
 evolve-lang does not promise zero downtime. The checker proves

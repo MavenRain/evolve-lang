@@ -1,0 +1,59 @@
+-- The oracle differential of the golden module fleet (S7 U3, Q-S7-6 (a)):
+-- the program of test/report/fleet.lang, then the chain of each stage before
+-- the last, one step a stage (Q-S3-27 (a)), and the entries verdict and
+-- guard. The gate runs each entry with `langc eval` and compares the result
+-- with the same call of test/wasm/fleet.wasm.
+table items (id : bigint key, label : text)
+
+app v1 (reads items.id, reads items.label)
+
+app v2 (reads items.id, reads items.label, writes items.label)
+
+app v3 (reads items.id)
+
+protocol fleet where
+  deploy v2
+  deploy v3
+  retire v1
+  retire v2
+  dropColumn items label
+
+-- The program columns in the code order, the apps, liveAt and the live set
+-- of each stage (Q-S4-2 (a)).
+cols : Cols 2
+cols = pack 2 (λ (j : ℕ) → flagIf (natEq j 0) items_id items_label)
+
+appAt : ℕ → App 2
+appAt a = flagIf (natEq a 0) v1 (flagIf (natEq a 1) v2 v3)
+
+apps : Live 2
+apps = pack 3 (λ (j : ℕ) → appAt j)
+
+liveAt : ℕ → ℕ → Bool
+liveAt i j = flagIf (natEq j 0) (natLe i 2) (flagIf (natEq j 1) (boolAnd (natLe 1 i) (natLe i 3)) (natLe 2 i))
+
+lives : ℕ → Live 2
+lives i = flagIf (natEq i 0) (pack 1 (λ (j : ℕ) → v1)) (flagIf (natEq i 1) (pack 2 (λ (j : ℕ) → appAt j)) (flagIf (natEq i 2) apps (flagIf (natEq i 3) (pack 2 (λ (j : ℕ) → appAt (natAdd j 1))) (pack 1 (λ (j : ℕ) → v3)))))
+
+chain0 : Chain 2 1 fleet_0 fleet_0
+chain0 = nil 2 1 fleet_0
+
+chain1 : Chain 2 1 fleet_0 fleet_1
+chain1 = snoc 2 1 fleet_0 fleet_0 fleet_1 chain0 (deploy 2 1 fleet_0 v2)
+
+chain2 : Chain 2 1 fleet_0 fleet_2
+chain2 = snoc 2 1 fleet_0 fleet_1 fleet_2 chain1 (deploy 2 1 fleet_1 v3)
+
+chain3 : Chain 2 1 fleet_0 fleet_3
+chain3 = snoc 2 1 fleet_0 fleet_2 fleet_3 chain2 (retire 2 1 fleet_2 v1)
+
+chain4 : Chain 2 1 fleet_0 fleet_4
+chain4 = snoc 2 1 fleet_0 fleet_3 fleet_4 chain3 (retire 2 1 fleet_3 v2)
+
+-- verdict a i is the code of app a at stage i, live or not (Q-S5-9 (a)).
+verdict : ℕ → ℕ → ℕ
+verdict a i = verdictCode 2 1 (flagIf (natEq i 0) (compat 2 1 fleet_0 fleet_0 chain0 (lives i) cols (appAt a)) (flagIf (natEq i 1) (compat 2 1 fleet_0 fleet_1 chain1 (lives i) cols (appAt a)) (flagIf (natEq i 2) (compat 2 1 fleet_0 fleet_2 chain2 (lives i) cols (appAt a)) (flagIf (natEq i 3) (compat 2 1 fleet_0 fleet_3 chain3 (lives i) cols (appAt a)) (flagIf (natEq i 4) (compat 2 1 fleet_0 fleet_4 chain4 (lives i) cols (appAt a)) (compat 2 1 fleet_0 fleet_5 fleet (lives i) cols (appAt a)))))))
+
+-- guard i x is the first failed fact of stage i for the mask x.
+guard : ℕ → ℕ → ℕ
+guard i x = guardFirst 2 1 (flagIf (natEq i 0) (stageGuard 2 1 fleet_0 fleet_0 chain0 (lives i) apps liveAt cols) (flagIf (natEq i 1) (stageGuard 2 1 fleet_0 fleet_1 chain1 (lives i) apps liveAt cols) (flagIf (natEq i 2) (stageGuard 2 1 fleet_0 fleet_2 chain2 (lives i) apps liveAt cols) (flagIf (natEq i 3) (stageGuard 2 1 fleet_0 fleet_3 chain3 (lives i) apps liveAt cols) (flagIf (natEq i 4) (stageGuard 2 1 fleet_0 fleet_4 chain4 (lives i) apps liveAt cols) (stageGuard 2 1 fleet_0 fleet_5 fleet (lives i) apps liveAt cols)))))) x
