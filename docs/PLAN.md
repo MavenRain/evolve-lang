@@ -518,7 +518,7 @@ on the new checks, docs, close (stage, commit message, next prompt).
 | S7 | Wasm oracle writer | differential gate against `langc eval`. DONE. Measured 2026-10-30: `make check` EXIT 0: examples 12; parse refusals 11; check refusals 80; evals 254; ir 12; wasm 16; differential 892 cases, 0 mismatches; oracle 6 golden modules, 175 calls, 0 mismatches; oracle differential 143 cases, 0 mismatches; fmt 173 canonical, 8 non-canonical pairs; json 38 fixtures, diagnostics 53 codes (36 with a fixture, 17 with no fixture); golden reports 6; sql 10 golden protocols, 60 files; cubical 52 checks, 29 round trips; sql writer regressions 4; sql protocol regressions 13. U0: `src/wasmbin.c`, the byte helpers of `src/wasm.c` and `src/oracle.c`; the i32 calls of `test/run-wasm.mjs` (Q-S7-1, Q-S7-2 (a)). U1: the guest folds `verdictCode` and `guardFirst` (Q-S7-3, Q-S7-4 (a)), 36 evals. U2: `src/oracle.c`, `langc wasm` and `WASM_LIMIT` (Q-S7-5 (a)). U3: 6 golden modules `test/wasm/` and the differential on `test/oracle/` (Q-S7-6, Q-S7-7 (a)); `test/oracle-writer.c` checks `WASM_LIMIT` and the cell byte of each code 0 to 9. U4: 8 mutants KILLED of 8 (docs/STATUS.md, S7); the docs (Q-S7-8 (a)) |
 | S8 | agent kit: `SKILL.md` with 5 graded examples, `langc mcp`, `explain-code`, final `AGENTS.md` and README table | MCP stdio test; each example passes `check`. DONE. Measured 2026-10-31: `make check` EXIT 0: examples 12; parse refusals 11; check refusals 80; evals 254; ir 12; wasm 16; differential 892 cases, 0 mismatches; oracle 6 golden modules, 175 calls, 0 mismatches; oracle differential 143 cases, 0 mismatches; fmt 173 canonical, 8 non-canonical pairs; json 38 fixtures, diagnostics 53 codes (36 with a fixture, 17 with no fixture); golden reports 6; sql 10 golden protocols, 60 files; mcp 33 requests, 0 mismatches, 5 examples; explain-code 53 codes; list-steps 12 steps; skill 5 examples, 5 outputs match; readme 7 rows, 12 steps named, agents 12 verbs in usage; cubical 52 checks, 29 round trips; sql writer regressions 4; sql protocol regressions 13. U0: the verbs of `src/main.c` write to a FILE* argument; U1: `src/mcp.c` and the JSON reader `src/front/jsonin.c`; U2: `explain-code` (`src/codes.c`) and `list-steps` (`src/steps.c`); U3: `skills/evolve-lang/SKILL.md` and the 5 programs of `examples/agent/`; U4: the README table, AGENTS.md and the docs. the mutants M1 to M10 (M9 in 3 parts) are all KILLED (`docs/STATUS.md` S8). |
 | S9 | `docs/TOKEN-BASELINE.md` and its script | the script output equals the file. DONE. Measured 2026-10-31: `make check` EXIT 0: examples 12; parse refusals 11; check refusals 80; evals 254; ir 12; wasm 16; differential 892 cases, 0 mismatches; oracle 6 golden modules, 175 calls, 0 mismatches; oracle differential 143 cases, 0 mismatches; fmt 173 canonical, 8 non-canonical pairs; json 38 fixtures, diagnostics 53 codes (36 with a fixture, 17 with no fixture); golden reports 6; sql 10 golden protocols, 60 files; mcp 33 requests, 0 mismatches, 5 examples; explain-code 53 codes; list-steps 12 steps; skill 5 examples, 5 outputs match; readme 7 rows, 12 steps named, agents 12 verbs in usage; tokens 4 files, 2 rules, 6 ratios, 0 mismatches; cubical 52 checks, 29 round trips; sql writer regressions 4; sql protocol regressions 13. U0: `test/tokcount.c` (`build/tokcount`: the rules A and B, the ratio lines and the check mode; Q-S9-1 (c), Q-S9-2 (a)); U1: the samples of `test/baseline/`, `docs/TOKEN-BASELINE.md` and the gate line (Q-S9-3 to Q-S9-6 (a)); U2: the mutants M1 to M10, all KILLED (`docs/STATUS.md` S9), and the docs (Q-S9-7 (a)). |
-| S10 | close: `docs/STATUS.md`, `docs/VALIDATION.md`, full gate, mutant summary | full gate EXIT 0 |
+| S10 | close: `docs/STATUS.md`, `docs/VALIDATION.md`, full gate, mutant summary | full gate EXIT 0: serial `make -B check` (Q-S10-5 (a)), 2026-10-31, 537 seconds (review gate): examples 12; parse refusals 11; check refusals 80; evals 254; ir 12; wasm 16; differential 892 cases, 0 mismatches; oracle 6 golden modules, 175 calls, 0 mismatches; oracle differential 143 cases, 0 mismatches; fmt 173 canonical, 8 non-canonical pairs; json 38 fixtures, diagnostics 53 codes (36 with a fixture, 17 with no fixture); golden reports 6; sql 10 golden protocols, 60 files; mcp 33 requests, 0 mismatches, 5 examples; explain-code 53 codes; list-steps 12 steps; skill 5 examples, 5 outputs match; readme 7 rows, 12 steps named, agents 12 verbs in usage; tokens 4 files, 2 rules, 6 ratios, 0 mismatches; tokens IO regressions 5 cases, 0 failures; validation 6 laws, 5 judgements, 11 rows, 0 mismatches, 4 bad fixtures refused; validation IO regressions 8 cases, 0 failures; gate 0 failures; review, domain and diagnostic edit regressions passed; cubical 52 checks, 29 round trips; json writer regressions 21; report guard regressions 4; sql writer regressions 4; sql protocol regressions 13. N 1499 tests, 0 failures (`docs/VALIDATION.md`, Q-S10-5 (a)). Mutant summary (`docs/STATUS.md`, Q-S10-3 (a)): 127 mutants run, 126 KILLED, 1 SURVIVED (S2c), 1 STILLBORN (S2b M3); S2a to S9 ran 115, 114 KILLED; S10 U0: M1 to M6 on `test/validation.c`, all KILLED. The O items that a slice closed (Q-S10-6 (a), `docs/STATUS.md` S10): O12, O14 and O15 (S2d) and O16 (S3); O8 stays open. U0: the law-id check `test/validation.c` (`build/validation-test`) and 4 bad fixtures (Q-S10-2 (c), Q-S10-9 (a)); U1: `docs/VALIDATION.md` (Q-S10-1 (a), Q-S10-5 (a)); U2: the head of `docs/STATUS.md`, `## Mutant summary` and the S10 section (Q-S10-3 (a), Q-S10-4 (a)); U3: this row, sections 10 and 11 and README `## Status (S10)` (Q-S10-6 to Q-S10-8 (a)); U4: the close gate. The plan is CLOSED (Q-S10-8 (a)). |
 
 ## 10. Open items
 
@@ -544,11 +544,28 @@ on the new checks, docs, close (stage, commit message, next prompt).
   (https://www.prisma.io/docs/orm/release-status). The README gives this
   status and makes no claim about its features.
 - O8 the kit sample domain (`domain/domain.lang`) and its examples stay
-  until S3 replaces them. S1 moved them to the S1 surface.
+  until S3 replaces them. S1 moved them to the S1 surface. OPEN after S10:
+  S3 added the evolve domain, but the kit sample `Color`, `Item`, `Stack`
+  and `Tree` stays at the end of `domain/domain.lang` (Q-S3-5 (a)).
+  `examples/inventory.lang`, `test/ir/` and `test/check/` use these names
+  (`docs/STATUS.md`, S10, O item check).
 - O9 column types beyond `text` and `bigint` on a USER ask only (Q13).
-- O10 to O16 come from S1 (`docs/STATUS.md`, S1, open items): the ASCII
-  alias policy, `let`, the kit `Sum` and `Unit`, `flagIf`, dead core paths,
-  the ASCII value printer, and `nil` for `Chain` in S3.
+- O10 to O16 come from S1 (`docs/STATUS.md`, S1, open items). The S10 O
+  item check (`docs/STATUS.md`, S10) confirms O12, O14, O15 and O16 in the
+  code (Q-S10-6 (a)).
+  - O10 the ASCII alias policy.
+  - O11 `let`.
+  - O12 CLOSED (S2d): the kit `Sum` and `Unit`. `Sum`, `inl`, `inr` and
+    `either` are dropped names (`NAME_UNKNOWN`); `Unit` and `unit` stay
+    builtins.
+  - O13 `flagIf`.
+  - O14 CLOSED (S2d): dead core paths. S2a removes the `Prod`, `List`,
+    `unfold` and `filter` Ops (O18), and S2d removes the rest (Ops 51 to
+    47).
+  - O15 CLOSED (S2d): the ASCII value printer. The value printer writes
+    `λ`, `→` and `×`.
+  - O16 CLOSED (S3): `nil` for `Chain`. `nil` is the first `Chain`
+    constructor of `domain/domain.lang`, not a dropped name.
 - O17 (2026-10-26) evolve-lang does not follow leaf-lang after S2a. S2a
   ports a frozen leaf-lang working tree that the USER did not review.
   Later leaf-lang changes (the rest of its S2, a USER review fix of its
@@ -618,38 +635,39 @@ USER ruling 2026-10-25, verbatim: "Rule a for Q1-Q14".
 - Q14 `lock_timeout` per stage. RULED (a). (a) 2 s by default, a protocol can set it.
   (b) 5 s. (c) no default; each protocol must set it.
 
-Questions from S2b (2026-10-26). OPEN: not ruled. The S2b build takes
-reading (a) of each.
+Questions from S2b (2026-10-26). The S2b build took reading (a) of each.
+The USER ruled (a) for all eight on 2026-10-31 (Q-S10-7 (a)). There is no
+change to the code.
 
-- Q-S2b-1 program data rule (2.1 against the S2b row). OPEN, reading (a).
+- Q-S2b-1 program data rule (2.1 against the S2b row). RULED (a).
   (a) `REFUSE_DATA` for a program family with no type argument in its
   params or indices; a family with a type argument runs the CM criterion,
   and a passing CM is admitted in a program. (b) refuse closed data only
   (quorum-lang); this contradicts 2.1. (c) `REFUSE_DATA` for all program
   data, and a C unit test for the criterion.
-- Q-S2b-2 the place of the declared `Maybe` and `Trunc`. OPEN, reading
-  (a). (a) a program test file in S2b (`test/eval/cells.lang`); S3 decides
+- Q-S2b-2 the place of the declared `Maybe` and `Trunc`. RULED (a).
+  (a) a program test file in S2b (`test/eval/cells.lang`); S3 decides
   the domain placement. (b) `domain/domain.lang` now; the criterion must
   then run on domain families. S3 (Q-S3-9 (a), USER 2026-10-27): `Maybe`
   and `Trunc` stay in the program test files; the S3 domain uses neither.
-- Q-S2b-3 the builtin `Option`. OPEN, reading (a). (a) keep it in S2b, add
+- Q-S2b-3 the builtin `Option`. RULED (a). (a) keep it in S2b, add
   the declared CM twin `Maybe` (a declared `Option` gives `REFUSE_NAME`),
   and remove or keep the builtin in S2d (O12, O14). (b) replace it now
   (`lower.c`, `eval.c`, 3 examples, 2 fixtures, the differential).
-- Q-S2b-4 the path constructor surface. OPEN, reading (a). (a) `Path (F A)
+- Q-S2b-4 the path constructor surface. RULED (a). (a) `Path (F A)
   s t`, no new token. (b) the quorum-lang `≡` token (lexer, fmt, grammar).
-- Q-S2b-5 dimension. OPEN, reading (a). (a) 1-cells only; a square gets
+- Q-S2b-5 dimension. RULED (a). (a) 1-cells only; a square gets
   `REFUSE_CELL`; 2.2 needs only the 1-cell `squash`. (b) squares (quorum-lang
   `Bag₀`, `trunc₀`).
-- Q-S2b-6 the names `List`, `nil`, `cons`. OPEN, reading (a). (a) keep the
+- Q-S2b-6 the names `List`, `nil`, `cons`. RULED (a). (a) keep the
   dropped `NAME_UNKNOWN` rows (O16: `nil` returns for `Chain` in S3); the
   hint now says "(S2d)". (b) the quorum-lang `REFUSE_CELL` rows.
-- Q-S2b-7 code-equivalent mutants. OPEN, reading (a). Three `REFUSE_CELL`
+- Q-S2b-7 code-equivalent mutants. RULED (a). Three `REFUSE_CELL`
   branches (cell header, path shape, path dimension) give the same code as
   a later branch. (a) a line of `test/check/expect.txt` can pin a fixed
   part of the message; M2, M7 and M8 are then KILLED. (b) record them as
   code-equivalent.
-- Q-S2b-8 rule numbers in messages. OPEN, reading (a). The S2b messages
+- Q-S2b-8 rule numbers in messages. RULED (a). The S2b messages
   use the numbers of section 1: `REFUSE_CELL` is rule R1 and `REFUSE_DATA`
   is rule R2. The kit messages keep the kit numbers: `REFUSE_AXIOM` is rule
   R2, `REFUSE_REC` is rule R3 and `REFUSE_NAME` is rule R4. In section 1,
@@ -689,7 +707,39 @@ Questions from S2c (2026-10-26). The USER ruled (a) for all eight on
   (2.2); no and-block branch (evolve-lang has no `and` blocks).
 - Q-S2c-8 destructor arity. RULED (a) (USER 2026-10-26). An explicit type
   argument, `head ℕ s`, as `just ℕ 5` and `squash A u v` in S2b.
-- F-U4-1 shared `REFUSE_CELL` texts (S2c U4). OPEN, reading (a). The 13
-  survey branches come from 7 FAIL sites of cocell_shape, so some
-  branches give the same text. (a) keep the texts (Q-S2c-7 (a)). (b)
-  split the texts by branch.
+- F-U4-1 shared `REFUSE_CELL` texts (S2c U4). RULED (a) (USER 2026-10-31,
+  Q-S10-7 (a)). The 13 survey branches come from 7 FAIL sites of
+  cocell_shape, so some branches give the same text. (a) keep the texts
+  (Q-S2c-7 (a)). (b) split the texts by branch.
+
+Questions from S10 (2026-10-31). The USER ruled all nine on 2026-10-31:
+Q-S10-2 (c) and the others (a). Each mark gives the label of the answer,
+verbatim.
+
+- Q-S10-1 the shape of `docs/VALIDATION.md`. RULED (a): "(a) Template +
+  law map (Recommended)". The template sections and a law map: one row
+  for each L id of 6.1 and each J id of 4.2 (S10 U1).
+- Q-S10-2 does the gate check `docs/VALIDATION.md`? RULED (c): "(c)
+  Law-id check". The gate checks the ids of the law map (S10 U0).
+- Q-S10-3 the mutant summary. RULED (a): "(a) STATUS table, no rerun
+  (Recommended)". A table in `docs/STATUS.md`; no mutant runs again (S10
+  U2).
+- Q-S10-4 the head of `docs/STATUS.md` and an S10 section. RULED (a):
+  "(a) Fill head + S10 section (Recommended)" (S10 U2).
+- Q-S10-5 the full gate and N. RULED (a): "(a) Serial make -B + N
+  (Recommended)". The close gate is one serial `make -B check`;
+  `docs/VALIDATION.md` gives N (S10 U1 and U4).
+- Q-S10-6 section 10, the O items. RULED (a): "(a) Mark slice-closed ones
+  (Recommended)". Section 10 marks O12, O14, O15 and O16 CLOSED, with the
+  slice, after the S10 O item check (`docs/STATUS.md`, S10). O8 stays
+  open (S10 U3).
+- Q-S10-7 Q-S2b-1 to Q-S2b-8 and F-U4-1. RULED (a): "(a) Rule all (a) now
+  (Recommended)". The S2b questions and F-U4-1 are RULED (a); there is no
+  change to the code (S10 U3).
+- Q-S10-8 README and the plan state. RULED (a): "(a) Status (S10), plan
+  CLOSED (Recommended)". README `## Status (S10)`; the plan is CLOSED; a
+  next plan (O1, O2) starts only on a USER ask (S10 U3).
+- Q-S10-9 the form of the law-id check (asked after Q-S10-2 (c)). RULED
+  (a): "(a) C check + bad fixtures (Recommended)". `test/validation.c`
+  (`build/validation-test`) and 4 bad fixtures in `test/validation/` (S10
+  U0).

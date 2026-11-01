@@ -67,6 +67,14 @@ build/tokcount-io: test/tokcount-io.c
 	mkdir -p build
 	$(TCC) $(CFLAGS) -o build/tokcount-io test/tokcount-io.c
 
+build/validation-test: test/validation.c
+	mkdir -p build
+	$(TCC) $(CFLAGS) -o build/validation-test test/validation.c
+
+build/validation-io: test/validation-io.c
+	mkdir -p build
+	$(TCC) $(CFLAGS) -o build/validation-io test/validation-io.c
+
 check-clang: build/domain.c build/prelude.c
 	$(CC) $(CLANG_FLAGS) $(SRC) build/domain.c build/prelude.c
 	$(CC) $(CLANG_FLAGS) $(FRONT_TOOL)
@@ -80,8 +88,10 @@ check-clang: build/domain.c build/prelude.c
 	$(CC) $(CLANG_FLAGS) test/readme.c
 	$(CC) $(CLANG_FLAGS) test/tokcount.c
 	$(CC) $(CLANG_FLAGS) test/tokcount-io.c
+	$(CC) $(CLANG_FLAGS) test/validation.c
+	$(CC) $(CLANG_FLAGS) test/validation-io.c
 
-check: build/langc build/fronttool build/diagnostics build/cubical build/sql-writer build/oracle-writer build/mcp-test build/verbs-test build/skill-test build/readme-test build/tokcount build/tokcount-io check-clang
+check: build/langc build/fronttool build/diagnostics build/cubical build/sql-writer build/oracle-writer build/mcp-test build/verbs-test build/skill-test build/readme-test build/tokcount build/tokcount-io build/validation-test build/validation-io check-clang
 	sh test/gate.sh
 	sh test/review.sh
 	build/fronttool

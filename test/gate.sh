@@ -501,6 +501,33 @@ build/tokcount --check docs/TOKEN-BASELINE.md examples/rename.lang \
 # and a document with extra bytes hidden after a NUL.
 build/tokcount-io || fail=$((fail + 1))
 
+# The law map (Q-S10-2 (c), Q-S10-9 (a)). build/validation-test reads the
+# ids of the L items of PLAN 6.1 and of the J items of PLAN 4.2, and the rows
+# between the laws markers of docs/VALIDATION.md. Each id must have exactly
+# one row, each row id must be a PLAN id, and each path in a tests cell must
+# exist. validation_refused NAME TEXT: with test/validation/NAME.md, the
+# check must exit 1, and its first FAIL line must be `FAIL: validation:
+# TEXT`. It prints FAIL lines, then the count line with the refused count.
+refused=0
+validation_refused() {
+  status=0
+  build/validation-test docs/PLAN.md "test/validation/$1.md" > "$tmp/validation" || status=$?
+  first=$(awk '/^FAIL: / { print; exit }' "$tmp/validation")
+  case "$status:$first" in
+    "1:FAIL: validation: $2") refused=$((refused + 1)) ;;
+    *) echo "FAIL validation/$1.md: want exit 1 and $2, got exit $status: $first"; fail=$((fail + 1)) ;;
+  esac
+}
+validation_refused missing-id "L3 has no row"
+validation_refused extra-id "row 7: L7 is not an id of PLAN 6.1 or 4.2"
+validation_refused duplicate-id "J2 has 2 rows"
+validation_refused missing-path "row 5: test/eval/chain-law.lang does not exist"
+status=0
+build/validation-test > "$tmp/validation" || status=$?
+[ "$status" -eq 0 ] || fail=$((fail + 1))
+awk -v n="$refused" '/^validation: / { $0 = $0 "; " n " bad fixtures refused" } { print }' "$tmp/validation"
+build/validation-io || fail=$((fail + 1))
+
 rm -rf "$tmp"
 
 if rg -n '\x{2013}|\x{2014}' . >/dev/null; then

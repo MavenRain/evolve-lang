@@ -1,34 +1,169 @@
 # evolve-lang status
 
-> Write here: one paragraph. Say which milestone the build implements, and
-> which milestone it does not complete yet.
+The build implements the slices S1 to S9 of docs/PLAN.md section 9 and
+the S10 close. A program declares tables, app versions and protocols. The
+checker refuses a protocol step that breaks an app version that is live
+at that stage, and `langc report`, `langc sql` and `langc wasm` write the
+checked protocol. Each slice has its section below and its `make check`
+row in PLAN section 9. The build does not complete M0: the items of
+"Remaining M0 work" are open (PLAN section 10). The runner `langc run`
+(R4, O1) is not built, and no PostgreSQL server runs the stage files in
+the gate. docs/VALIDATION.md gives the full gate, N and the law map.
 
 ## Implemented
 
-> Write here: one item for each feature that works. Name the former (F1 to
-> F15), the core type or the core operation.
-
-- <feature>.
+- S1: the Agda-like surface (Q7 RULED (a)), the canonical printer `langc
+  fmt`, `W_NONCANON` with a `fix`, and `langc check --json`
+  (docs/DIAGNOSTICS.md).
+- S2a: the interval `I`, `PathP` and `Path`, `transp`, `hcomp`, `Partial`
+  and systems.
+- S2b: indexed families, path constructors of dimension 1 and
+  `REFUSE_CELL` (the CM criterion).
+- S2c: codata and the CC branch of `REFUSE_CELL`.
+- S2d: `Fin n`; `Sum`, `inl`, `inr` and `either` removed (O12); no dead
+  core path (O14); the Unicode value printer (O15).
+- S2e: univalence: `Glue`, `glue`, `unglue` and `ua`.
+- S3: the evolve domain in `domain/domain.lang` (`State n m`, `Step`,
+  `Chain`, `Stage`) and the forms `table`, `app` and `protocol`.
+- S4: the checker: `compat` (J2.1 to J2.4), J4, J5 and the laws.
+- S5: the JSON compatibility report (`Fact`, `Guard`, `langc report`).
+- S6: the SQL protocol writer `langc sql` (the PostgreSQL 15 path).
+- S7: the Wasm oracle writer `langc wasm`.
+- S8: the agent kit: `langc mcp`, `langc explain-code`, `langc
+  list-steps` and `SKILL.md`.
+- S9: the token baseline: `build/tokcount` and `docs/TOKEN-BASELINE.md`.
+- S10: the law-id check `build/validation-test` and
+  `docs/VALIDATION.md`.
 
 ## Remaining M0 work
 
-> Write here: one numbered item for each missing feature. Say what each item
-> needs first.
-
-1. <work item>.
+1. O2: libpq, psql and postgres are not installed on this machine. USER
+   step first: `brew install libpq`.
+2. O1: the runner `langc run` (R4) and integration tests on a Docker
+   PostgreSQL. It needs O2 first.
+3. O19: a native PostgreSQL server run of the stage files and `make
+   check-pg` (Q-S6-14 (a)). It needs O2 first. Before the first live run,
+   confirm and cite in PLAN 5.1 the two doc facts of O19.
+4. O4: the PostgreSQL 18 form `NOT NULL ... NOT VALID` (a version-gated
+   form, Q5 RULED (a)). S6 writes the PostgreSQL 15 path only.
+5. O5: the lock queue behavior. It needs a second PostgreSQL source
+   first, before a doc cites it.
+6. O8: the kit sample (`Color`, `Item`, `Stack`, `Tree`) stays at the end
+   of `domain/domain.lang` (Q-S3-5 (a)). It needs evolve replacements for
+   the ir and wasm tests that use these names first.
+7. O9: column types other than `text` and `bigint`. It needs a USER ask
+   first (Q13).
+8. O10: the ASCII alias policy. It needs a USER ruling first. The S9
+   token baseline gives the token cost of the Unicode form.
+9. O11: a `let` form. It needs a design first.
+10. O13: the name of `flagIf`. It needs a USER ruling on the name of `if`
+    first.
+11. O6: prior art. The Reddit thread of the description was not found.
+12. O17: leaf-lang changes after S2a. They need a USER ask first (a hand
+    port).
+13. O18: the face tests and the system bounds of S2a (see "Known
+    limits").
 
 ## Known limits
 
-> Write here: one item for each limit of the current build, with its cause
-> (a fuel budget, a host limit, a stack size).
-
-- <limit>.
+- PLAN 6.2: the denotation does not model the time that a step waits for
+  a lock, traffic and the load that a batch adds, long transactions,
+  replication lag, the cost of triggers, disk space, whether the app code
+  agrees with its declared requirements, the server version, or an
+  operator who runs the stage files out of order. evolve-lang does not
+  claim zero downtime (D11).
+- O19: the gate compares the text of the SQL files with the goldens. No
+  PostgreSQL server runs them in the gate, because `psql` is not
+  installed (O2). The S6 review ran the 10 golden protocols in PGlite
+  0.5.13 by hand.
+- The gate does not run Python or Rust. It counts the tokens of
+  `rename.py` and `rename.rs` only. The S9 hand run ran them (Q-S9-5
+  (a)).
+- S2c mutant S1 SURVIVED: the parameter check and the index check of a
+  codata declaration can change places, because each fixture has one
+  top-level fault.
+- Only a copy kills S8 M10 and S9 M7. They change a gate check, and the
+  committed inputs do not reach the changed branch.
+- O18: the face tests are conservative where an atom of a meet stays
+  free. Two systems convert by structure, in order. A system has at most
+  `FACE_MEETS_MAX` cells (`TYPE_SYSTEM`). A square (dimension 2) gets
+  `REFUSE_CELL` (Q-S2b-5 (a)).
+- Wasm: no checked program gets to `WASM_LIMIT`. `test/oracle-writer.c`
+  checks the cell codes 1, 6, 7 and 8 on hand-made Reports only. The
+  differential tests the masks below 2^min(k, 6) of a stage with k facts.
+- Fuel: the evaluator has one fuel budget for a program. A false pre
+  uses fuel on each conjunct (S3).
+- `build/validation-test` checks the ids and the paths of the law map,
+  not the text of the laws.
+- The MCP server keeps no session state. It answers `tools/call` also
+  before `initialize` (S8).
 
 ## Internal boundaries
 
-> Write here: one paragraph for each module group. Say which module holds
-> which job, which tests check which tables, and which types a program
-> cannot use.
+The front end is in `src/front/`. `lexer.c` and `parser.c` read the
+surface (SPEC.md section 2) into the syntax tree of `ast.h`. `fmt.c` is
+the canonical printer of `langc fmt`. `check.c` is the bidirectional type
+checker: the formers, the data rules, `REFUSE_CELL`, the forms `table`,
+`app` and `protocol`, the C driver of the J4 and J5 refusals, and the
+cells of the report. `eval.c` holds the evaluator, the conversion test,
+quote, the Kan rules and the value printer. `lower.c` lowers checked
+values to the first-order IR of `src/ir.h`. `core.h` gives the Op values.
+`prelude.lang` is the kernel prelude. test/gate.sh checks the examples,
+the parse and check refusals, the evals and the fmt files.
+`test/cubical.c` checks the face restrictions, the binder scope and the
+round trips. `build/fronttool` checks the domain declarations, and
+`test/diagnostics.c` checks the warnings and the JSON edit spans.
+
+The domain is `domain/domain.lang`: `ColType`, `State n m`, the 9 pre and
+9 post functions, `Step` (11 constructors), `Chain` (`nil` and `snoc`),
+`Stage`, `compat` and `stageGuard`. Each name becomes a core
+name (rule R4). The kit sample at the end of the file stays for the kit
+tests (O8).
+
+The writers are in `src/`. `main.c` is the command line. `json.c` writes
+the JSON of `langc report`, `sql.c` the files of `langc sql` and
+`oracle.c` the module of `langc wasm`. `wasm.c` and `wasmbin.c` are the
+Wasm back end. `mcp.c` is the server of `langc mcp`. `codes.c` gives the
+rows of `langc explain-code` (the codes of docs/DIAGNOSTICS.md), and
+`steps.c` the rows of `langc list-steps` (the `Step` constructors). The
+golden files are in `test/report/`, `test/sql/`, `test/wasm/` and
+`test/mcp/`. `test/sql-writer.c`, `test/oracle-writer.c`, `test/mcp.c`,
+`test/verbs.c`, `test/skill.c` and `test/readme.c` check the writers, the
+verbs, `SKILL.md` and `README.md`.
+
+The review tools are not part of `langc`. `test/tokcount.c` and
+`test/tokcount-io.c` check docs/TOKEN-BASELINE.md. `test/validation.c`
+checks the law map of docs/VALIDATION.md against PLAN 6.1 and 4.2.
+
+A program cannot use a dropped kit name. The `DROPPED` table of
+`src/front/check.c` (`Flag`, `Prod`, `List`, `Eq`, `Sum` and the others)
+gives `NAME_UNKNOWN` with a hint.
+
+## Mutant summary
+
+| Slice | Files | Mutants | Killed | Stillborn | Survivors | Note |
+|---|---|---|---|---|---|---|
+| S1 | not given | 6 | 6 | 0 | 0 | M1 to M6, in the S1 prose only |
+| S2a | src/front/check.c | 3 | 3 | 0 | 0 | `rule_transp`, `rule_system`, `rule_hcomp` |
+| S2b | src/front/check.c | 14 | 14 | 1 | 0 | M3 does not build (clang `-Werror`) |
+| S2c | src/front/check.c | 13 | 12 | 0 | 1 | S1 SURVIVED: one top-level fault in each fixture |
+| S2d | src/front/check.c | 7 | 7 | 0 | 0 | F1 to F7 on `rule_fin` |
+| S2e | src/front/eval.c | 5 | 5 | 0 | 0 | the Kan rules of `Glue` and the universe |
+| S3 | domain/domain.lang, src/front/check.c, src/front/eval.c, src/front/lower.c | 15 | 15 | 0 | 0 | M1 to M9 (one for each pre), M10, M-U0-1 to M-U0-5 |
+| S4 | domain/domain.lang, src/front/check.c | 9 | 9 | 0 | 0 | M1 to M4 on the J2 clauses of `compat` |
+| S5 | src/front/check.c, src/json.c, domain/domain.lang | 11 | 11 | 0 | 0 | the golden report loop |
+| S6 | src/sql.c | 8 | 8 | 0 | 0 | the golden SQL loop |
+| S7 | src/oracle.c | 8 | 8 | 0 | 0 | the module calls and the `cmp` |
+| S8 | src/mcp.c, src/codes.c, src/steps.c, SKILL.md, test/readme.c | 12 | 12 | 0 | 0 | only a copy kills M10 |
+| S9 | test/tokcount.c, a copy of docs/TOKEN-BASELINE.md | 10 | 10 | 0 | 0 | only a copy kills M7 |
+| S10 U0 | test/validation.c | 6 | 6 | 0 | 0 | the 4 bad fixtures and the real files |
+| Total | | 127 | 126 | 1 | 1 | |
+
+The Mutants column counts the mutants that build and run. S2b M3 does
+not build (STILLBORN), and it is not in the 14. S1 has no `### Mutants`
+part: its row comes from the S1 prose ("Mutants M1 to M6 are killed").
+The slices S2a to S9 ran 115 mutants, and 114 are KILLED
+(docs/VALIDATION.md, `## Slices`). Each slice section gives its mutants.
 
 ## S1: canonical surface, `langc fmt`, JSON diagnostics
 
@@ -1534,3 +1669,108 @@ it also exits 0 on the files of the gate.
   section records the hand run.
 - S10 (PLAN 9): the close (`docs/STATUS.md`, `docs/VALIDATION.md`, the
   full gate, the mutant summary).
+
+## S10: the close
+
+S10 (2026-10-31) is the close of PLAN section 9. It adds no former and no
+`langc` code. It adds the law-id check, writes docs/VALIDATION.md and the
+head of this file, and marks the O items that a slice closed. Q-S10-1 to
+Q-S10-9 are RULED (USER 2026-10-31).
+
+### Units
+
+- U0, the law-id check (Q-S10-2 (c), Q-S10-9 (a)): `test/validation.c`
+  builds `build/validation-test`. It reads the `- L<n>` items of PLAN 6.1,
+  the `- J<n>` items of PLAN 4.2 and the law map of docs/VALIDATION.md
+  (the rows between `<!-- laws begin -->` and `<!-- laws end -->`). Each
+  id must have one row, each row must name an id of PLAN, and each path
+  of a row must exist. Each of the 4 bad fixtures in `test/validation/`
+  (`missing-id.md`, `extra-id.md`, `duplicate-id.md`, `missing-path.md`)
+  must give exit 1 and its FAIL line. `Makefile` and `test/gate.sh` get
+  the target and the gate block.
+- U1, docs/VALIDATION.md (Q-S10-1 (a), Q-S10-5 (a)): the gate and its
+  count lines, N and the rule for N, the differential and oracle checks,
+  the token baseline, one paragraph for each slice, what the gate does not
+  check, and the law map.
+- U2, this file (Q-S10-3 (a), Q-S10-4 (a)): the head, `## Mutant summary`
+  and this section. No mutant runs again. U2 does the O item check below.
+- U3, docs/PLAN.md and README.md (Q-S10-6 (a), Q-S10-7 (a), Q-S10-8
+  (a)): the PLAN S10 row, Q-S10-1 to Q-S10-9 RULED, Q-S2b-1 to Q-S2b-8
+  and F-U4-1 RULED (a), the O items that the check below confirms marked
+  CLOSED, README `## Status (S10)` and the plan CLOSED.
+- U4, the close: one serial `make -B check` (Q-S10-5 (a)). The gate
+  command of docs/VALIDATION.md becomes `make -B check`, with the date and
+  the seconds of that run.
+
+### Gate counts against S9
+
+| Count | S9 (dd98209) | S10 |
+|---|---|---|
+| validation law rows (0 mismatches) | none | 11 (6 laws, 5 judgements) |
+| validation bad fixtures refused | none | 4 |
+| validation IO regression cases | none | 8 |
+| N (docs/VALIDATION.md) | 1491 | 1499 |
+| gate failures | 0 | 0 |
+
+S10 adds two count lines: `validation: 6 laws, 5 judgements, 11 rows, 0
+mismatches; 4 bad fixtures refused` and `validation IO regressions: 8
+cases, 0 failures`. The other count lines do not
+change. The S9 column includes the USER review fix of S9 (`tokens IO
+regressions: 5 cases, 0 failures`). The `validation` line is not in N:
+its first number counts law rows, not cases.
+
+The S10 review fixes the law-map parser so that blank or indented rows
+cannot hide extra ids, and a fourth cell without a final pipe is refused.
+Both input files refuse NUL bytes with exit 2. `test/validation-io.c`
+checks these cases, a valid map, a map with blank and indented rows, and
+an unwritable stdout. Its 8 cases add 8 to N.
+
+### Mutants
+
+Each mutant makes one change in `test/validation.c`, then `make -B` of
+`build/validation-test` and the gate block of the law map. These 6
+mutants are all KILLED. After each mutant the file is restored, `cmp`
+with its backup is equal, and the block passes again.
+
+| Mutant | Site | Result |
+|---|---|---|
+| M1 | the test for an id with no row is off | KILLED by `missing-id.md` (`L3 has no row`) |
+| M2 | the test for a row with no PLAN id is off | KILLED by `extra-id.md` (`row 7: L7 is not an id of PLAN 6.1 or 4.2`) |
+| M3 | the test for an id with 2 rows is off | KILLED by `duplicate-id.md` (`J2 has 2 rows`) |
+| M4 | the path test always passes | KILLED by `missing-path.md` (`row 5: test/eval/chain-law.lang does not exist`) |
+| M5 | the judgement ids of PLAN 4.2 are not read | KILLED by the real files (`row 7: J1 is not an id of PLAN 6.1 or 4.2` to `row 11: J5`) |
+| M6 | the exit status is always 0 | KILLED by the 4 bad fixtures (each gives exit 0) |
+
+### O item check (Q-S10-6 (a))
+
+U2 checked each O item that PLAN section 10 or this file says a slice
+closed. It used `rg` on `src/` and `build/langc check` of a short probe.
+
+- O12, CLOSED by S2d: `Sum`, `inl`, `inr` and `either` are rows of the
+  `DROPPED` table of `src/front/check.c`. `Unit` and `unit` stay builtins.
+  The probe `s : Sum ℕ ℕ` gives `NAME_UNKNOWN: s: unknown name Sum (S2d
+  removed it)`. The probe `u : Unit`, `u = unit` gives `ok`.
+- O14, CLOSED by S2d: `src/front/core.h` has no Op value for `List`,
+  `Prod`, `filter` or `unfold`. The probe `l : List ℕ` gives
+  `NAME_UNKNOWN` (S1 removed it).
+- O15, CLOSED by S2d: the value printer of `src/front/eval.c` writes `λ`,
+  `→` and `×`. A probe with a type mismatch gives `expected a term of type
+  ℕ × ℕ`.
+- O16, CLOSED by S3: `nil` is not in the `DROPPED` table, and it is the
+  first `Chain` constructor of `domain/domain.lang`. The probe `n : ℕ`,
+  `n = nil` gives `TYPE_ARITY: n: nil needs 3 arguments`, not
+  `NAME_UNKNOWN`.
+- O8 stays OPEN. S3 added the evolve domain, but the kit sample `Color`,
+  `Item`, `Stack` and `Tree` stays at the end of `domain/domain.lang`
+  (Q-S3-5 (a)). `examples/inventory.lang`, `test/ir/` and `test/check/`
+  use these names.
+
+### Open items from S10
+
+- U3 marks O12, O14, O15 and O16 CLOSED in PLAN section 10. O8 stays
+  OPEN with O1, O2, O4, O5, O6, O9, O10, O11, O13, O17, O18 and O19
+  ("Remaining M0 work").
+- Q-S10-6 (a) names O8 as closed by S3. The O item check does not confirm
+  it, so U3 does not mark it.
+- PLAN section 9 has no slice after S10. The plan closes at U4 (Q-S10-8
+  (a)).

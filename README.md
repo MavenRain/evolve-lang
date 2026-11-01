@@ -10,7 +10,7 @@ TinyCC. The JSON compatibility report (S5), the PostgreSQL SQL stage files
 (S6), the Wasm compatibility oracle module (S7) and the agent kit (S8) are
 built.
 
-## Status (S9)
+## Status (S10)
 
 S1 gives the evolve-lang surface on the tcc-wasm kit of lang-template: the
 Agda-like syntax with ASCII aliases (`SPEC.md` section 2), `langc fmt`,
@@ -21,8 +21,8 @@ dimension 1 in cell signatures and the refusal codes `REFUSE_CELL` and
 `DOMAIN_FAMILY` (a hand port from quorum-lang 8dee55b). S2c adds codata
 (`codata`), the CC branch of `REFUSE_CELL`, the corecursor and the `head`
 and `tail` destructors (a hand port from intent-lang 67445ae). S2d adds
-`Fin n` as a defined Sigma type, the kit types `Sum` and `Unit` and the
-ASCII value printer. S2e adds univalence: `Glue`, `glue`, `unglue` and
+`Fin n` as a defined Sigma type, removes the kit type `Sum` and gives
+the Unicode value printer. S2e adds univalence: `Glue`, `glue`, `unglue` and
 `ua` (a hand port from zkpolicy-lang 1d263fb). S3 adds the evolve domain
 (`domain/domain.lang`: the states, the apps and the 11 steps), the forms
 `table`, `app` and `protocol`, and the step check J1. S4 adds the
@@ -42,8 +42,16 @@ revision 2025-11-25), `skills/evolve-lang/SKILL.md` and the 5 graded
 examples of `examples/agent/`. S9 adds the token baseline
 `docs/TOKEN-BASELINE.md` (PLAN 7, bullet 6): the token counts of the
 rename of PLAN 4.6 in evolve-lang, Python and Rust, and the count tool
-`build/tokcount`. `make check` passes.
-`docs/PLAN.md` section 9 gives the slices, and `docs/STATUS.md` gives the state.
+`build/tokcount`. S10 closes the plan: the law-id check
+`build/validation-test`, `docs/VALIDATION.md` (the gate, its count lines
+and the law map) and the head and the mutant summary of `docs/STATUS.md`.
+`make check` passes: the gate runs 1499 tests with zero failures
+(`docs/VALIDATION.md`). `docs/PLAN.md` section 9 gives the slices, and
+`docs/STATUS.md` gives the state.
+
+The plan of `docs/PLAN.md` is CLOSED: S1 to S10 are built. A next plan
+(`docs/PLAN.md` O1, the runner `langc run`, and O2, libpq) starts only on
+a USER ask.
 
 evolve-lang does not promise zero downtime. The checker proves
 compatibility facts about the declared model only. Lock wait time, traffic,
